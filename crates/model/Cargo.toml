@@ -1,0 +1,8 @@
+[package]
+name = "little-agent-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }

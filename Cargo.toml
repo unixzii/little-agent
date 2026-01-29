@@ -1,0 +1,12 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = "1"
+little-agent-model = { path = "crates/model" }
