@@ -8,7 +8,11 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-serde = "1"
-serde_json = "1"
-tokio = "1"
+serde = "1.0.228"
+serde_json = "1.0.149"
+tokio = "1.49.0"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.22"
 little-agent-model = { path = "crates/model" }
+little-agent-test-model = { path = "crates/test-model" }
+little-agent-core = { path = "crates/core" }

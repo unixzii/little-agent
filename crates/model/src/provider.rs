@@ -16,7 +16,7 @@ pub trait ModelProviderError: Error + Send + Sync + 'static {
 /// Once the provider is created, it should behave like a stateless object.
 /// It can still have internal state, but callers should not rely on it,
 /// and the provider should be prepared for being dropped anytime.
-pub trait ModelProvider: Send {
+pub trait ModelProvider: Send + Sync {
     /// The error type that may be returned by the provider.
     type Error: ModelProviderError;
 
