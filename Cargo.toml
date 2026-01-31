@@ -8,5 +8,7 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
+serde = "1"
+serde_json = "1"
 tokio = "1"
 little-agent-model = { path = "crates/model" }

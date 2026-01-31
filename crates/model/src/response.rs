@@ -1,6 +1,9 @@
 use std::pin::Pin;
 use std::task::{self, Poll};
 
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
 use crate::OpaqueMessage;
 use crate::provider::ModelProviderError;
 
@@ -47,7 +50,7 @@ pub trait ModelResponse: Sized + Send + 'static {
 }
 
 /// The reason why a model response has finished.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ModelFinishReason {
     /// The model needs to call a tool.
     ToolCalls,
@@ -56,18 +59,18 @@ pub enum ModelFinishReason {
 }
 
 /// Describes a tool call request from the model.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ToolCallRequest {
     /// The unique identifier for the tool call request.
     pub id: String,
     /// The name of the tool to call.
     pub name: String,
     /// The argument pairs to pass to the function.
-    pub arguments: Vec<(String, String)>,
+    pub arguments: Vec<(String, Value)>,
 }
 
 /// The event from a model response.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ModelResponseEvent {
     /// The response has been completed.
     Completed(ModelFinishReason),

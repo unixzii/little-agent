@@ -5,5 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["time"] }
 little-agent-model = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }

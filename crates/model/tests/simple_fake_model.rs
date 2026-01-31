@@ -116,6 +116,7 @@ mod tests {
         let provider = FakeModelProvider;
         let req = ModelRequest {
             messages: vec![ModelMessage::User("Good morning".to_string())],
+            tools: vec![],
         };
         let mut resp = provider.send_request(&req).await.unwrap();
 
@@ -144,7 +145,10 @@ mod tests {
     #[tokio::test]
     async fn test_error() {
         let provider = FakeModelProvider;
-        let req = ModelRequest { messages: vec![] };
+        let req = ModelRequest {
+            messages: vec![],
+            tools: vec![],
+        };
         let result = provider.send_request(&req).await;
         let err = result.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Other);

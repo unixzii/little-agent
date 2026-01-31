@@ -65,7 +65,7 @@ impl Hash for OpaqueMessage {
     }
 }
 
-trait OpaqueMessageObject {
+trait OpaqueMessageObject: Send + Sync {
     fn id(&self) -> &str;
     fn as_any(&self) -> &dyn Any;
 }
@@ -75,7 +75,7 @@ struct OpaqueMessageInner<T> {
     value: T,
 }
 
-impl<T: 'static> OpaqueMessageObject for OpaqueMessageInner<T> {
+impl<T: Send + Sync + 'static> OpaqueMessageObject for OpaqueMessageInner<T> {
     fn id(&self) -> &str {
         &self.id
     }

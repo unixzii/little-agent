@@ -5,6 +5,8 @@ use crate::OpaqueMessage;
 pub struct ModelRequest {
     /// The input messages.
     pub messages: Vec<ModelMessage>,
+    /// Tools that are available to the model.
+    pub tools: Vec<ModelTool>,
 }
 
 /// A complete message.
@@ -29,4 +31,26 @@ pub struct ToolCallResult {
     pub id: String,
     /// The result of the tool call.
     pub content: String,
+}
+
+/// Describes a tool that can be used by the model.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ModelTool {
+    /// Name of the tool.
+    pub name: String,
+    /// Description of the tool.
+    pub description: String,
+    /// Parameters for calling the tool.
+    pub parameters: Vec<ModelToolParameter>,
+}
+
+/// Describes a parameter for calling a tool.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ModelToolParameter {
+    /// Name of the parameter.
+    pub name: String,
+    /// Type hint of the parameter.
+    pub r#type: String,
+    /// Description of the parameter.
+    pub description: Option<String>,
 }
