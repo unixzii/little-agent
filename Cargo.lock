@@ -9,9 +9,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
+name = "little-agent-actor"
+version = "0.0.0"
+dependencies = [
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "little-agent-core"
 version = "0.0.0"
 dependencies = [
+ "little-agent-actor",
  "little-agent-model",
  "little-agent-test-model",
  "tokio",

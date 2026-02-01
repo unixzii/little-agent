@@ -34,6 +34,6 @@ impl AgentBuilder {
     /// Builds the agent.
     #[inline]
     pub fn build(self) -> Agent {
-        Agent::spawn(self)
+        Agent::spawn_from_builder(self)
     }
 }

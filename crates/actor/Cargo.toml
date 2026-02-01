@@ -1,15 +1,12 @@
 [package]
-name = "little-agent-core"
+name = "little-agent-actor"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "macros", "rt"] }
 tracing = { workspace = true }
-little-agent-model = { workspace = true }
-little-agent-actor = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
-little-agent-test-model = { workspace = true }

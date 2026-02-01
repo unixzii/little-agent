@@ -158,7 +158,7 @@ async fn handle_client_request<P: ModelProvider + 'static>(
             break;
         };
         trace!("got an event: {event:?}");
-        if !req.resp_event_tx.send(event).is_ok() {
+        if req.resp_event_tx.send(event).is_err() {
             trace!("cancelled");
             break;
         }
