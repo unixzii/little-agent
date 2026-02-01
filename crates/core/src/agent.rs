@@ -8,7 +8,9 @@ use std::collections::{HashMap, VecDeque};
 use little_agent_actor::define_actor;
 use tokio::task::JoinHandle;
 
-use crate::{agent::state::EnqueueUserInput, model_client::ModelClient};
+use crate::agent::state::EnqueueUserInput;
+use crate::conversation::Conversation;
+use crate::model_client::ModelClient;
 pub use builder::AgentBuilder;
 use state::AgentStage;
 
@@ -24,6 +26,7 @@ define_actor! {
     #[wrapper_type(Agent)]
     pub struct AgentState {
         model_client: Option<ModelClient>,
+        conversation: Conversation,
         current_stage: AgentStage,
         pending_inputs: VecDeque<String>,
         running_tasks: HashMap<u64, JoinHandle<()>>,
@@ -51,6 +54,7 @@ impl Agent {
 
         let state = AgentState {
             model_client: Some(model_client),
+            conversation: Default::default(),
             current_stage: Default::default(),
             pending_inputs: Default::default(),
             running_tasks: Default::default(),

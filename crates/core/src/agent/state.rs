@@ -4,6 +4,7 @@ use little_agent_actor::{Actor, Message};
 use little_agent_model::{ModelMessage, ModelProviderError, ModelRequest};
 
 use super::AgentState;
+use crate::conversation::Item as ConversationItem;
 use crate::model_client::{ModelClient, ModelClientResponse};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -48,7 +49,13 @@ impl AgentState {
     fn process_input_checked(&mut self, input: String, handle: &Actor<Self>) {
         self.current_stage = AgentStage::ModelThinking;
 
-        let request = self.build_model_request(input);
+        // Insert the message to the conversation.
+        self.conversation.items.push(ConversationItem {
+            msg: ModelMessage::User(input.clone()),
+            transcript: input,
+        });
+
+        let request = self.build_model_request();
         let model_client = self
             .model_client
             .take()
@@ -70,10 +77,14 @@ impl AgentState {
         );
     }
 
-    fn build_model_request(&self, input: String) -> ModelRequest {
-        // TODO: Implement this.
+    fn build_model_request(&self) -> ModelRequest {
         ModelRequest {
-            messages: vec![ModelMessage::User(input)],
+            messages: self
+                .conversation
+                .items
+                .iter()
+                .map(|i| i.msg.clone())
+                .collect(),
             tools: vec![],
         }
     }
@@ -120,6 +131,22 @@ impl Debug for ModelClientRequestFinishedMessage {
 
 impl Message<AgentState> for ModelClientRequestFinishedMessage {
     fn handle(self, state: &mut AgentState, handle: &Actor<AgentState>) {
+        let resp = match self.response {
+            Ok(resp) => resp,
+            Err(_) => unimplemented!(),
+        };
+
+        // Insert the message to the conversation.
+        let transcript = resp.transcript;
+        let msg = if let Some(opaque_msg) = resp.opaque_msg {
+            ModelMessage::Opaque(opaque_msg)
+        } else {
+            // Downgrade to a text-only message.
+            ModelMessage::Assistant(transcript.clone())
+        };
+        let conversation_item = ConversationItem { msg, transcript };
+        state.conversation.items.push(conversation_item);
+
         // TODO: Implement this.
         state.model_client = Some(self.model_client);
         state.current_stage = AgentStage::Idle;

@@ -7,6 +7,7 @@
 extern crate tracing;
 
 mod agent;
+pub mod conversation;
 mod model_client;
 
 pub use agent::{Agent, AgentBuilder};
