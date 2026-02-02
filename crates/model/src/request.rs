@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 use crate::OpaqueMessage;
 
 /// A request to be sent to the model provider.
@@ -40,17 +42,9 @@ pub struct ModelTool {
     pub name: String,
     /// Description of the tool.
     pub description: String,
-    /// Parameters for calling the tool.
-    pub parameters: Vec<ModelToolParameter>,
-}
-
-/// Describes a parameter for calling a tool.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ModelToolParameter {
-    /// Name of the parameter.
-    pub name: String,
-    /// Type hint of the parameter.
-    pub r#type: String,
-    /// Description of the parameter.
-    pub description: Option<String>,
+    /// Parameters definition of the tool.
+    ///
+    /// For most model providers, the parameters should typically be
+    /// defined by a [JSON schema](https://json-schema.org/).
+    pub parameters: Value,
 }

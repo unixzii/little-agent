@@ -178,8 +178,7 @@ mod tests {
     use std::pin::pin;
 
     use little_agent_model::{
-        ModelMessage, ModelRequest, ModelTool, ModelToolParameter,
-        OpaqueMessage, ToolCallRequest,
+        ModelMessage, ModelRequest, ModelTool, OpaqueMessage, ToolCallRequest,
     };
     use serde_json::json;
 
@@ -236,11 +235,15 @@ mod tests {
             tools: vec![ModelTool {
                 name: "read_file".to_owned(),
                 description: "Reads a file".to_owned(),
-                parameters: vec![ModelToolParameter {
-                    name: "filename".to_owned(),
-                    r#type: "string".to_owned(),
-                    description: None,
-                }],
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "The name of the file to read"
+                        }
+                    }
+                }),
             }],
         };
         let resp = provider.send_request(&req).await.unwrap();

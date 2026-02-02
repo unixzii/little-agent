@@ -69,7 +69,7 @@ mod tests {
             ModelTool {
                 name: "test_tool".to_owned(),
                 description: "A test tool".to_owned(),
-                parameters: vec![],
+                parameters: json!({}),
             }
         }
 

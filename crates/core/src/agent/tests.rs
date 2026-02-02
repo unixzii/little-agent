@@ -62,7 +62,7 @@ impl Tool for ListTodosTool {
         ModelTool {
             name: "list_todos".to_owned(),
             description: "Lists all todos".to_owned(),
-            parameters: vec![],
+            parameters: json!({}),
         }
     }
 
@@ -87,7 +87,7 @@ impl Tool for ListCalendarEventsTool {
         ModelTool {
             name: "list_calendar_events".to_owned(),
             description: "Lists all calendar events".to_owned(),
-            parameters: vec![],
+            parameters: json!({}),
         }
     }
 
