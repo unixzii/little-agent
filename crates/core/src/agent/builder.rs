@@ -1,16 +1,22 @@
 use std::error::Error;
 
 use little_agent_model::ModelProvider;
+use little_agent_model::ToolCallRequest;
 use serde_json::Value;
 
 use super::Agent;
 use crate::model_client::ModelClient;
-use crate::tool::{AnyTool, Tool, ToolObject};
+use crate::tool::{AnyTool, Tool, ToolObject, ToolResult};
 
 /// [`Agent`] builder.
 pub struct AgentBuilder {
     pub(crate) model_client: ModelClient,
     pub(crate) on_idle: Option<Box<dyn Fn() + Send + Sync>>,
+    pub(crate) on_transcript: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    pub(crate) on_tool_call_request:
+        Option<Box<dyn Fn(&ToolCallRequest) + Send + Sync>>,
+    pub(crate) on_tool_result:
+        Option<Box<dyn Fn(&str, &ToolResult) + Send + Sync>>,
     pub(crate) tools: Vec<Box<dyn ToolObject>>,
 }
 
@@ -23,6 +29,9 @@ impl AgentBuilder {
         Self {
             model_client: ModelClient::new(provider),
             on_idle: None,
+            on_transcript: None,
+            on_tool_call_request: None,
+            on_tool_result: None,
             tools: vec![],
         }
     }
@@ -34,6 +43,36 @@ impl AgentBuilder {
         on_idle: impl Fn() + Send + Sync + 'static,
     ) -> Self {
         self.on_idle = Some(Box::new(on_idle));
+        self
+    }
+
+    /// Attaches a callback to be invoked when a transcript is generated.
+    #[inline]
+    pub fn on_transcript(
+        mut self,
+        on_transcript: impl Fn(&str) + Send + Sync + 'static,
+    ) -> Self {
+        self.on_transcript = Some(Box::new(on_transcript));
+        self
+    }
+
+    /// Attaches a callback to be invoked when a tool call request is received.
+    #[inline]
+    pub fn on_tool_call_request(
+        mut self,
+        on_tool_call_request: impl Fn(&ToolCallRequest) + Send + Sync + 'static,
+    ) -> Self {
+        self.on_tool_call_request = Some(Box::new(on_tool_call_request));
+        self
+    }
+
+    /// Attaches a callback to be invoked when a tool result is received.
+    #[inline]
+    pub fn on_tool_result(
+        mut self,
+        on_tool_result: impl Fn(&str, &ToolResult) + Send + Sync + 'static,
+    ) -> Self {
+        self.on_tool_result = Some(Box::new(on_tool_result));
         self
     }
 

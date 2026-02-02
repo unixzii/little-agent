@@ -55,6 +55,12 @@ impl AgentState {
         requests: Vec<ToolCallRequest>,
         handle: &Actor<Self>,
     ) {
+        if let Some(on_tool_call_request) = &self.on_tool_call_request {
+            for request in &requests {
+                on_tool_call_request(request);
+            }
+        }
+
         let mut tool_calls = vec![];
         self.tool_executor.handle_requests(requests, |id, fut| {
             tool_calls.push((id, fut));
@@ -76,6 +82,12 @@ impl AgentState {
 
     /// Process the input string, assuming the stage is checked.
     fn process_input_checked(&mut self, input: String, handle: &Actor<Self>) {
+        // Also invoke the transcript callback for user input, which can make
+        // the messages in the conversation ordered correctly.
+        if let Some(on_transcript) = &self.on_transcript {
+            on_transcript(&input);
+        }
+
         // Insert the message to the conversation.
         self.conversation.items.push(ConversationItem {
             msg: ModelMessage::User(input.clone()),
@@ -172,6 +184,9 @@ impl Message<AgentState> for ModelClientRequestFinishedMessage {
 
         // Insert the message to the conversation.
         let transcript = resp.transcript;
+        if let Some(on_transcript) = &state.on_transcript {
+            on_transcript(&transcript);
+        }
         let msg = if let Some(opaque_msg) = resp.opaque_msg {
             ModelMessage::Opaque(opaque_msg)
         } else {
@@ -224,6 +239,9 @@ impl Message<AgentState> for ToolCallFinishedMessage {
             debug_assert!(false, "internal state is inconsistent");
             return;
         };
+        if let Some(on_tool_call_result) = &mut state.on_tool_result {
+            on_tool_call_result(&self.id, &self.result);
+        }
         *result = Some(self.result);
 
         let all_done = state.pending_tool_results.values().all(|r| r.is_some());

@@ -6,6 +6,7 @@ mod tests;
 use std::collections::{HashMap, VecDeque};
 
 use little_agent_actor::define_actor;
+use little_agent_model::ToolCallRequest;
 use tokio::task::JoinHandle;
 
 use crate::agent::state::EnqueueUserInput;
@@ -36,6 +37,9 @@ define_actor! {
         next_task_id: u64,
 
         on_idle: Option<Box<dyn Fn() + Send + Sync>>,
+        on_transcript: Option<Box<dyn Fn(&str) + Send + Sync>>,
+        on_tool_call_request: Option<Box<dyn Fn(&ToolCallRequest) + Send + Sync>>,
+        on_tool_result: Option<Box<dyn Fn(&str, &ToolResult) + Send + Sync>>,
     }
 }
 
@@ -53,6 +57,9 @@ impl Agent {
         let AgentBuilder {
             model_client,
             on_idle,
+            on_transcript,
+            on_tool_call_request,
+            on_tool_result,
             tools,
         } = builder;
 
@@ -66,6 +73,9 @@ impl Agent {
             running_tasks: Default::default(),
             next_task_id: 1,
             on_idle,
+            on_transcript,
+            on_tool_call_request,
+            on_tool_result,
         };
         Self::spawn(state, Some("agent"))
     }

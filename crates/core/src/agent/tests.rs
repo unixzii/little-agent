@@ -1,4 +1,5 @@
 use std::future::ready;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use little_agent_model::{ModelTool, ToolCallRequest};
@@ -21,9 +22,16 @@ async fn test_simple_message() {
         ],
     });
 
+    let transcripts = Arc::new(Mutex::new(vec![]));
     let (idle_tx, mut idle_rx) = watch::channel::<bool>(false);
 
     let agent = AgentBuilder::with_model_provider(model_provider)
+        .on_transcript({
+            let transcripts = Arc::clone(&transcripts);
+            move |transcript| {
+                transcripts.lock().unwrap().push(transcript.to_owned());
+            }
+        })
         .on_idle(move || {
             idle_tx.send(true).unwrap();
         })
@@ -34,6 +42,11 @@ async fn test_simple_message() {
         .await
         .unwrap()
         .unwrap();
+
+    let transcripts = transcripts.lock().unwrap();
+    assert_eq!(transcripts.len(), 2);
+    assert_eq!(transcripts[0], "Hello");
+    assert_eq!(transcripts[1], "Hi, what can I do for you?");
 }
 
 struct ListTodosTool;
@@ -114,11 +127,28 @@ async fn test_tool_call() {
         )],
     });
 
+    let tool_call_requests = Arc::new(Mutex::new(vec![]));
+    let tool_results = Arc::new(Mutex::new(vec![]));
     let (idle_tx, mut idle_rx) = watch::channel::<bool>(false);
 
     let agent = AgentBuilder::with_model_provider(model_provider)
         .with_tool(ListTodosTool)
         .with_tool(ListCalendarEventsTool)
+        .on_tool_call_request({
+            let tool_call_requests = Arc::clone(&tool_call_requests);
+            move |request| {
+                tool_call_requests.lock().unwrap().push(request.clone());
+            }
+        })
+        .on_tool_result({
+            let tool_results = Arc::clone(&tool_results);
+            move |id, result| {
+                tool_results
+                    .lock()
+                    .unwrap()
+                    .push((id.to_owned(), result.clone()));
+            }
+        })
         .on_idle(move || {
             idle_tx.send(true).unwrap();
         })
@@ -129,4 +159,34 @@ async fn test_tool_call() {
         .await
         .unwrap()
         .unwrap();
+
+    let tool_call_requests = tool_call_requests.lock().unwrap();
+    assert_eq!(tool_call_requests.len(), 2);
+    assert_eq!(
+        tool_call_requests[0],
+        ToolCallRequest {
+            id: "tool:1".to_owned(),
+            name: "list_todos".to_owned(),
+            arguments: json!({}),
+        }
+    );
+    assert_eq!(
+        tool_call_requests[1],
+        ToolCallRequest {
+            id: "tool:2".to_owned(),
+            name: "list_calendar_events".to_owned(),
+            arguments: json!({}),
+        }
+    );
+
+    let tool_results = tool_results.lock().unwrap();
+    assert_eq!(tool_results.len(), 2);
+    assert_eq!(
+        tool_results[0],
+        ("tool:1".to_owned(), Ok("Found 0 todos".to_owned()))
+    );
+    assert_eq!(
+        tool_results[1],
+        ("tool:2".to_owned(), Err(ToolError::execution_error()))
+    );
 }
