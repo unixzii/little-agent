@@ -159,12 +159,12 @@ impl ModelProvider for TestModelProvider {
 
     fn send_request(
         &self,
-        _req: &ModelRequest,
+        req: &ModelRequest,
     ) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send + 'static
     {
         let resp = TestModelResponse {
             provider: self.clone(),
-            request: _req.clone(),
+            request: req.clone(),
             event_idx: 0,
             sleep: None,
         };
@@ -181,7 +181,7 @@ mod tests {
         ModelMessage, ModelRequest, ModelTool, ModelToolParameter,
         OpaqueMessage, ToolCallRequest,
     };
-    use serde_json::Value;
+    use serde_json::json;
 
     use super::*;
 
@@ -226,10 +226,7 @@ mod tests {
                 PresetEvent::ToolCall(ToolCallRequest {
                     id: "tool:1".to_owned(),
                     name: "read_file".to_owned(),
-                    arguments: vec![(
-                        "filename".to_owned(),
-                        Value::String("todo.txt".to_owned()),
-                    )],
+                    arguments: json!({ "filename": "todo.txt" }),
                 }),
             ],
         });
@@ -258,6 +255,6 @@ mod tests {
         assert_eq!(msg, "Sure, let me take a look.");
         let tool_call = tool_call.unwrap();
         assert_eq!(tool_call.name, "read_file");
-        assert_eq!(tool_call.arguments[0].1, "todo.txt");
+        assert_eq!(tool_call.arguments, json!({ "filename": "todo.txt" }));
     }
 }

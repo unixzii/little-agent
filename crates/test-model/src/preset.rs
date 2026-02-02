@@ -19,7 +19,7 @@ pub struct PresetResponse {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::Value;
+    use serde_json::json;
 
     use super::*;
 
@@ -33,16 +33,10 @@ mod tests {
                 PresetEvent::ToolCall(ToolCallRequest {
                     id: "1".to_string(),
                     name: "write_file".to_string(),
-                    arguments: vec![
-                        (
-                            "filename".to_string(),
-                            Value::String("message.txt".to_string()),
-                        ),
-                        (
-                            "content".to_string(),
-                            Value::String("Hello, world!".to_string()),
-                        ),
-                    ],
+                    arguments: json!({
+                        "filename": "message.txt",
+                        "content": "Hello, world!"
+                    }),
                 }),
             ],
         };

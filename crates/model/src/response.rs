@@ -65,8 +65,8 @@ pub struct ToolCallRequest {
     pub id: String,
     /// The name of the tool to call.
     pub name: String,
-    /// The argument pairs to pass to the function.
-    pub arguments: Vec<(String, Value)>,
+    /// The arguments for calling the function.
+    pub arguments: Value,
 }
 
 /// The event from a model response.

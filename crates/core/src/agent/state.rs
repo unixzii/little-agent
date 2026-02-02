@@ -1,11 +1,16 @@
 use std::fmt::{self, Debug};
+use std::future::Future;
 
 use little_agent_actor::{Actor, Message};
-use little_agent_model::{ModelMessage, ModelProviderError, ModelRequest};
+use little_agent_model::{
+    ModelFinishReason, ModelMessage, ModelProviderError, ModelRequest,
+    ToolCallRequest, ToolCallResult,
+};
 
 use super::AgentState;
 use crate::conversation::Item as ConversationItem;
 use crate::model_client::{ModelClient, ModelClientResponse};
+use crate::tool::ToolResult;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum AgentStage {
@@ -45,15 +50,45 @@ impl AgentState {
         }
     }
 
+    fn process_tool_call_requests(
+        &mut self,
+        requests: Vec<ToolCallRequest>,
+        handle: &Actor<Self>,
+    ) {
+        let mut tool_calls = vec![];
+        self.tool_executor.handle_requests(requests, |id, fut| {
+            tool_calls.push((id, fut));
+        });
+        for (id, fut) in tool_calls {
+            self.pending_tool_results.insert(id.clone(), None);
+            let handle_clone = handle.clone();
+            self.spawn_task(
+                |_| async move {
+                    let result = fut.await;
+                    handle_clone
+                        .send(ToolCallFinishedMessage { id, result })
+                        .ok();
+                },
+                handle,
+            );
+        }
+    }
+
     /// Process the input string, assuming the stage is checked.
     fn process_input_checked(&mut self, input: String, handle: &Actor<Self>) {
-        self.current_stage = AgentStage::ModelThinking;
-
         // Insert the message to the conversation.
         self.conversation.items.push(ConversationItem {
             msg: ModelMessage::User(input.clone()),
             transcript: input,
         });
+
+        self.request_model_checked(handle);
+    }
+
+    /// Request the model with the current conversation, assuming the
+    /// stage is checked.
+    fn request_model_checked(&mut self, handle: &Actor<Self>) {
+        self.current_stage = AgentStage::ModelThinking;
 
         let request = self.build_model_request();
         let model_client = self
@@ -78,15 +113,14 @@ impl AgentState {
     }
 
     fn build_model_request(&self) -> ModelRequest {
-        ModelRequest {
-            messages: self
-                .conversation
-                .items
-                .iter()
-                .map(|i| i.msg.clone())
-                .collect(),
-            tools: vec![],
-        }
+        let messages = self
+            .conversation
+            .items
+            .iter()
+            .map(|item| item.msg.clone())
+            .collect();
+        let tools = self.tool_executor.definitions();
+        ModelRequest { messages, tools }
     }
 
     fn spawn_task<F, Fut>(&mut self, f: F, handle: &Actor<Self>)
@@ -147,10 +181,21 @@ impl Message<AgentState> for ModelClientRequestFinishedMessage {
         let conversation_item = ConversationItem { msg, transcript };
         state.conversation.items.push(conversation_item);
 
-        // TODO: Implement this.
+        // Release the model client.
         state.model_client = Some(self.model_client);
-        state.current_stage = AgentStage::Idle;
-        state.process_next_input(handle);
+
+        // Check if we need to execute tools.
+        let should_run_tools = resp.finish_reason
+            == Some(ModelFinishReason::ToolCalls)
+            && !resp.tool_calls.is_empty();
+        if should_run_tools {
+            state.current_stage = AgentStage::RunningTools;
+            state.process_tool_call_requests(resp.tool_calls, handle);
+        } else {
+            // No tools to execute, continue to next input.
+            state.current_stage = AgentStage::Idle;
+            state.process_next_input(handle);
+        }
     }
 }
 
@@ -164,5 +209,48 @@ impl Message<AgentState> for TaskEndedMessage {
             .running_tasks
             .remove(&self.0)
             .expect("internal state is inconsistent");
+    }
+}
+
+#[derive(Debug)]
+struct ToolCallFinishedMessage {
+    id: String,
+    result: ToolResult,
+}
+
+impl Message<AgentState> for ToolCallFinishedMessage {
+    fn handle(self, state: &mut AgentState, handle: &Actor<AgentState>) {
+        let Some(result) = state.pending_tool_results.get_mut(&self.id) else {
+            debug_assert!(false, "internal state is inconsistent");
+            return;
+        };
+        *result = Some(self.result);
+
+        let all_done = state.pending_tool_results.values().all(|r| r.is_some());
+        if !all_done {
+            return;
+        }
+
+        // Add the tool results to the conversation.
+        for (id, result) in state.pending_tool_results.drain() {
+            let result = result.unwrap();
+            let transcript = if result.is_ok() {
+                format!("Ran a tool")
+            } else {
+                format!("Failed to run tool")
+            };
+            let msg = ModelMessage::Tool(ToolCallResult {
+                id,
+                content: match result {
+                    Ok(res) => res,
+                    Err(err) => err.reason().into_owned(),
+                },
+            });
+            let conversation_item = ConversationItem { msg, transcript };
+            state.conversation.items.push(conversation_item);
+        }
+
+        // Now, proceed to the next turn directly.
+        state.request_model_checked(handle);
     }
 }

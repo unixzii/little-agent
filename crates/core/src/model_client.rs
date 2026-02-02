@@ -2,8 +2,8 @@ use std::future::poll_fn;
 use std::pin::pin;
 
 use little_agent_model::{
-    ModelProvider, ModelProviderError, ModelRequest, ModelResponse,
-    ModelResponseEvent, OpaqueMessage,
+    ModelFinishReason, ModelProvider, ModelProviderError, ModelRequest,
+    ModelResponse, ModelResponseEvent, OpaqueMessage, ToolCallRequest,
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -60,12 +60,22 @@ impl ModelClient {
 
         // Try collecting the events first.
         let mut transcript = String::new();
+        let mut tool_calls = Vec::new();
+        let mut finish_reason = None;
         loop {
             let Some(resp_event) = resp_event_rx.recv().await else {
                 break;
             };
-            if let ModelResponseEvent::MessageDelta(msg) = &resp_event {
-                transcript.push_str(msg);
+            match resp_event {
+                ModelResponseEvent::MessageDelta(msg) => {
+                    transcript.push_str(&msg);
+                }
+                ModelResponseEvent::ToolCall(req) => {
+                    tool_calls.push(req);
+                }
+                ModelResponseEvent::Completed(reason) => {
+                    finish_reason = Some(reason);
+                }
             }
         }
 
@@ -82,6 +92,8 @@ impl ModelClient {
         Ok(ModelClientResponse {
             transcript,
             opaque_msg,
+            tool_calls,
+            finish_reason,
         })
     }
 }
@@ -97,6 +109,10 @@ impl Drop for ModelClient {
 pub struct ModelClientResponse {
     pub transcript: String,
     pub opaque_msg: Option<OpaqueMessage>,
+    /// Tool calls requested by the model.
+    pub tool_calls: Vec<ToolCallRequest>,
+    /// The reason the model finished generating.
+    pub finish_reason: Option<ModelFinishReason>,
 }
 
 struct ModelClientRequest {

@@ -11,6 +11,7 @@ use tokio::task::JoinHandle;
 use crate::agent::state::EnqueueUserInput;
 use crate::conversation::Conversation;
 use crate::model_client::ModelClient;
+use crate::tool::{Executor as ToolExecutor, ToolResult};
 pub use builder::AgentBuilder;
 use state::AgentStage;
 
@@ -26,9 +27,11 @@ define_actor! {
     #[wrapper_type(Agent)]
     pub struct AgentState {
         model_client: Option<ModelClient>,
+        tool_executor: ToolExecutor,
         conversation: Conversation,
         current_stage: AgentStage,
         pending_inputs: VecDeque<String>,
+        pending_tool_results: HashMap<String, Option<ToolResult>>,
         running_tasks: HashMap<u64, JoinHandle<()>>,
         next_task_id: u64,
 
@@ -50,13 +53,16 @@ impl Agent {
         let AgentBuilder {
             model_client,
             on_idle,
+            tools,
         } = builder;
 
         let state = AgentState {
             model_client: Some(model_client),
+            tool_executor: ToolExecutor::with_tools(tools),
             conversation: Default::default(),
             current_stage: Default::default(),
             pending_inputs: Default::default(),
+            pending_tool_results: Default::default(),
             running_tasks: Default::default(),
             next_task_id: 1,
             on_idle,
