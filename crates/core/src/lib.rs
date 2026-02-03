@@ -11,4 +11,4 @@ pub mod conversation;
 mod model_client;
 pub mod tool;
 
-pub use agent::{Agent, AgentBuilder};
+pub use agent::{Agent, AgentBuilder, TranscriptSource};

@@ -1,0 +1,33 @@
+[package]
+name = "little-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "little-agent"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["dep:indicatif", "dep:tracing-subscriber"]
+
+[dependencies]
+little-agent-model = { workspace = true }
+little-agent-test-model = { workspace = true }
+little-agent-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+tracing = { workspace = true }
+owo-colors = "4"
+indicatif = { version = "0.18.3", optional = true }
+
+[dependencies.tracing-subscriber]
+workspace = true
+optional = true
+features = ["env-filter"]
+
+[dependencies.tokio]
+workspace = true
+features = ["macros", "rt", "process", "io-std", "io-util"]

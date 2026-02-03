@@ -108,7 +108,9 @@ impl ModelResponse for TestModelResponse {
                 return Poll::Ready(Ok(None));
             }
         }
-        this.sleep = Some(Box::pin(sleep(Duration::from_millis(1))));
+        this.sleep = Some(Box::pin(sleep(
+            this.provider.delay.unwrap_or(Duration::from_millis(1)),
+        )));
         Pin::new(this).poll_next_event(cx)
     }
 
@@ -139,6 +141,7 @@ enum PresetTurn {
 #[derive(Clone, Default)]
 pub struct TestModelProvider {
     turn_presets: Vec<PresetTurn>,
+    delay: Option<Duration>,
 }
 
 impl TestModelProvider {
@@ -150,6 +153,11 @@ impl TestModelProvider {
     #[inline]
     pub fn add_user_turn(&mut self) {
         self.turn_presets.push(PresetTurn::User);
+    }
+
+    #[inline]
+    pub fn set_delay(&mut self, duration: Duration) {
+        self.delay = Some(duration);
     }
 }
 

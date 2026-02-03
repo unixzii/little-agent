@@ -23,7 +23,14 @@ impl Executor {
 
     #[inline]
     pub fn definitions(&self) -> Vec<ModelTool> {
-        self.tools.values().map(|tool| tool.definition()).collect()
+        self.tools
+            .values()
+            .map(|tool| ModelTool {
+                name: tool.name().to_owned(),
+                description: tool.description().to_owned(),
+                parameters: tool.parameter_schema().clone(),
+            })
+            .collect()
     }
 
     pub fn handle_requests<S>(&self, requests: Vec<ToolCallRequest>, spawner: S)
@@ -51,10 +58,12 @@ impl Executor {
 mod tests {
     use std::future::ready;
 
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::*;
     use crate::tool::{AnyTool, Tool};
+
+    static EMPTY_SCHEMA: &Value = &Value::Null;
 
     struct TestTool;
 
@@ -65,12 +74,12 @@ mod tests {
             "test_tool"
         }
 
-        fn definition(&self) -> ModelTool {
-            ModelTool {
-                name: "test_tool".to_owned(),
-                description: "A test tool".to_owned(),
-                parameters: json!({}),
-            }
+        fn description(&self) -> &str {
+            "A test tool"
+        }
+
+        fn parameter_schema(&self) -> &serde_json::Value {
+            EMPTY_SCHEMA
         }
 
         fn execute(

@@ -2,7 +2,7 @@ use std::future::ready;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use little_agent_model::{ModelTool, ToolCallRequest};
+use little_agent_model::ToolCallRequest;
 use little_agent_test_model::{PresetEvent, PresetResponse, TestModelProvider};
 use serde_json::{Value, json};
 use tokio::sync::watch;
@@ -28,7 +28,7 @@ async fn test_simple_message() {
     let agent = AgentBuilder::with_model_provider(model_provider)
         .on_transcript({
             let transcripts = Arc::clone(&transcripts);
-            move |transcript| {
+            move |transcript, _| {
                 transcripts.lock().unwrap().push(transcript.to_owned());
             }
         })
@@ -49,6 +49,8 @@ async fn test_simple_message() {
     assert_eq!(transcripts[1], "Hi, what can I do for you?");
 }
 
+static EMPTY_SCHEMA: &Value = &Value::Null;
+
 struct ListTodosTool;
 
 impl Tool for ListTodosTool {
@@ -58,12 +60,12 @@ impl Tool for ListTodosTool {
         "list_todos"
     }
 
-    fn definition(&self) -> ModelTool {
-        ModelTool {
-            name: "list_todos".to_owned(),
-            description: "Lists all todos".to_owned(),
-            parameters: json!({}),
-        }
+    fn description(&self) -> &str {
+        "Lists all todos"
+    }
+
+    fn parameter_schema(&self) -> &Value {
+        EMPTY_SCHEMA
     }
 
     fn execute(
@@ -83,12 +85,12 @@ impl Tool for ListCalendarEventsTool {
         "list_calendar_events"
     }
 
-    fn definition(&self) -> ModelTool {
-        ModelTool {
-            name: "list_calendar_events".to_owned(),
-            description: "Lists all calendar events".to_owned(),
-            parameters: json!({}),
-        }
+    fn description(&self) -> &str {
+        "Lists all calendar events"
+    }
+
+    fn parameter_schema(&self) -> &Value {
+        EMPTY_SCHEMA
     }
 
     fn execute(

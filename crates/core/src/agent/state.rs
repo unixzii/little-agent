@@ -7,7 +7,7 @@ use little_agent_model::{
     ToolCallRequest, ToolCallResult,
 };
 
-use super::AgentState;
+use super::{AgentState, TranscriptSource};
 use crate::conversation::Item as ConversationItem;
 use crate::model_client::{ModelClient, ModelClientResponse};
 use crate::tool::ToolResult;
@@ -85,7 +85,7 @@ impl AgentState {
         // Also invoke the transcript callback for user input, which can make
         // the messages in the conversation ordered correctly.
         if let Some(on_transcript) = &self.on_transcript {
-            on_transcript(&input);
+            on_transcript(&input, TranscriptSource::User);
         }
 
         // Insert the message to the conversation.
@@ -185,7 +185,7 @@ impl Message<AgentState> for ModelClientRequestFinishedMessage {
         // Insert the message to the conversation.
         let transcript = resp.transcript;
         if let Some(on_transcript) = &state.on_transcript {
-            on_transcript(&transcript);
+            on_transcript(&transcript, TranscriptSource::Assistant);
         }
         let msg = if let Some(opaque_msg) = resp.opaque_msg {
             ModelMessage::Opaque(opaque_msg)
@@ -252,18 +252,16 @@ impl Message<AgentState> for ToolCallFinishedMessage {
         // Add the tool results to the conversation.
         for (id, result) in state.pending_tool_results.drain() {
             let result = result.unwrap();
-            let transcript = if result.is_ok() {
-                format!("Ran a tool")
-            } else {
-                format!("Failed to run tool")
+            let (content, is_err) = match result {
+                Ok(res) => (res, false),
+                Err(err) => (err.reason().into_owned(), true),
             };
-            let msg = ModelMessage::Tool(ToolCallResult {
-                id,
-                content: match result {
-                    Ok(res) => res,
-                    Err(err) => err.reason().into_owned(),
-                },
-            });
+            let transcript = if is_err {
+                format!("Failed to run a tool, error: {content}")
+            } else {
+                format!("Ran a tool, result:\n{content}")
+            };
+            let msg = ModelMessage::Tool(ToolCallResult { id, content });
             let conversation_item = ConversationItem { msg, transcript };
             state.conversation.items.push(conversation_item);
         }

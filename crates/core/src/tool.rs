@@ -3,10 +3,9 @@
 mod error;
 mod executor;
 
-use std::error::Error as StdError;
 use std::pin::Pin;
 
-use little_agent_model::ModelTool;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 pub use error::{Error, ErrorKind};
@@ -19,15 +18,23 @@ pub type ToolResult = Result<String, Error>;
 ///
 /// Implementations of this trait should be stateless, and may not maintain any
 /// internal state.
+///
+/// The tool can be context-aware, meaning it can access additional information
+/// about the current execution context, such as the working directory or the
+/// current user. To do this, make the context an immutable state of the tool,
+/// which can be set during initialization, and copy it when executing.
 pub trait Tool: Send + Sync + 'static {
     /// The type of input that the tool accepts.
-    type Input: TryFrom<Value>;
+    type Input: DeserializeOwned;
 
     /// Returns the name of the tool.
     fn name(&self) -> &str;
 
-    /// Returns the tool definition for the model.
-    fn definition(&self) -> ModelTool;
+    /// Returns the description of the tool.
+    fn description(&self) -> &str;
+
+    /// Returns the parameter schema of the tool.
+    fn parameter_schema(&self) -> &Value;
 
     /// Executes the tool with the given input.
     ///
@@ -42,7 +49,9 @@ pub trait Tool: Send + Sync + 'static {
 pub(crate) trait ToolObject: Send + Sync + 'static {
     fn name(&self) -> &str;
 
-    fn definition(&self) -> ModelTool;
+    fn description(&self) -> &str;
+
+    fn parameter_schema(&self) -> &Value;
 
     fn execute(
         &self,
@@ -52,18 +61,20 @@ pub(crate) trait ToolObject: Send + Sync + 'static {
 
 pub(crate) struct AnyTool<T: Tool>(pub T);
 
-impl<T: Tool> ToolObject for AnyTool<T>
-where
-    <T::Input as TryFrom<Value>>::Error: StdError,
-{
+impl<T: Tool> ToolObject for AnyTool<T> {
     #[inline]
     fn name(&self) -> &str {
         self.0.name()
     }
 
     #[inline]
-    fn definition(&self) -> ModelTool {
-        self.0.definition()
+    fn description(&self) -> &str {
+        self.0.description()
+    }
+
+    #[inline]
+    fn parameter_schema(&self) -> &Value {
+        self.0.parameter_schema()
     }
 
     #[inline]
@@ -71,7 +82,7 @@ where
         &self,
         arguments: Value,
     ) -> Pin<Box<dyn Future<Output = ToolResult> + Send>> {
-        let input: T::Input = match arguments.try_into() {
+        let input: T::Input = match serde_json::from_value(arguments) {
             Ok(input) => input,
             Err(err) => {
                 let reason = format!("{err}");

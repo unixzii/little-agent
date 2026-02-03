@@ -48,6 +48,15 @@ impl Error {
         }
     }
 
+    /// Creates a new error with the `PermissionDenied` kind.
+    #[inline]
+    pub fn permission_denied() -> Self {
+        Self {
+            kind: ErrorKind::PermissionDenied,
+            reason: None,
+        }
+    }
+
     /// Attaches a reason to the error.
     #[inline]
     pub fn with_reason<S: Into<String>>(self, reason: S) -> Self {

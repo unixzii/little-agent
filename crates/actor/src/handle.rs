@@ -22,7 +22,7 @@ impl<S: Send + Sync + 'static> Actor<S> {
             mailbox,
             msg_rx,
             kill_rx,
-        } = Mailbox::new();
+        } = Mailbox::new_parts();
         let mailbox = Arc::new(mailbox);
         tokio::spawn(
             run_actor(Arc::downgrade(&mailbox), state, msg_rx, kill_rx)

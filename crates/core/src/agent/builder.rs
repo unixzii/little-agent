@@ -1,18 +1,18 @@
-use std::error::Error;
-
 use little_agent_model::ModelProvider;
 use little_agent_model::ToolCallRequest;
-use serde_json::Value;
 
-use super::Agent;
+use super::{Agent, TranscriptSource};
 use crate::model_client::ModelClient;
 use crate::tool::{AnyTool, Tool, ToolObject, ToolResult};
 
 /// [`Agent`] builder.
+#[allow(clippy::type_complexity)]
 pub struct AgentBuilder {
     pub(crate) model_client: ModelClient,
+    pub(crate) system_prompt: Option<String>,
     pub(crate) on_idle: Option<Box<dyn Fn() + Send + Sync>>,
-    pub(crate) on_transcript: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    pub(crate) on_transcript:
+        Option<Box<dyn Fn(&str, TranscriptSource) + Send + Sync>>,
     pub(crate) on_tool_call_request:
         Option<Box<dyn Fn(&ToolCallRequest) + Send + Sync>>,
     pub(crate) on_tool_result:
@@ -28,12 +28,20 @@ impl AgentBuilder {
     ) -> Self {
         Self {
             model_client: ModelClient::new(provider),
+            system_prompt: None,
             on_idle: None,
             on_transcript: None,
             on_tool_call_request: None,
             on_tool_result: None,
             tools: vec![],
         }
+    }
+
+    /// Sets the system prompt for the agent.
+    #[inline]
+    pub fn with_system_prompt<S: Into<String>>(mut self, prompt: S) -> Self {
+        self.system_prompt = Some(prompt.into());
+        self
     }
 
     /// Attaches a callback to be invoked when the agent is idle.
@@ -50,7 +58,7 @@ impl AgentBuilder {
     #[inline]
     pub fn on_transcript(
         mut self,
-        on_transcript: impl Fn(&str) + Send + Sync + 'static,
+        on_transcript: impl Fn(&str, TranscriptSource) + Send + Sync + 'static,
     ) -> Self {
         self.on_transcript = Some(Box::new(on_transcript));
         self
@@ -78,10 +86,7 @@ impl AgentBuilder {
 
     /// Registers a tool.
     #[inline]
-    pub fn with_tool<T: Tool>(mut self, tool: T) -> Self
-    where
-        <T::Input as TryFrom<Value>>::Error: Error,
-    {
+    pub fn with_tool<T: Tool>(mut self, tool: T) -> Self {
         let tool = Box::new(AnyTool(tool));
         self.tools.push(tool);
         self

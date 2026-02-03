@@ -6,15 +6,24 @@ mod tests;
 use std::collections::{HashMap, VecDeque};
 
 use little_agent_actor::define_actor;
-use little_agent_model::ToolCallRequest;
+use little_agent_model::{ModelMessage, ToolCallRequest};
 use tokio::task::JoinHandle;
 
 use crate::agent::state::EnqueueUserInput;
-use crate::conversation::Conversation;
+use crate::conversation::{Conversation, Item as ConversationItem};
 use crate::model_client::ModelClient;
 use crate::tool::{Executor as ToolExecutor, ToolResult};
 pub use builder::AgentBuilder;
 use state::AgentStage;
+
+/// Where the transcript comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TranscriptSource {
+    /// User input message.
+    User,
+    /// Assistant message.
+    Assistant,
+}
 
 define_actor! {
     /// An agent instance, which maintains a session, a model provider, and
@@ -26,6 +35,7 @@ define_actor! {
     /// `enqueue_user_input` message. Instead of calling the model, the agent
     /// enqueues the user input, and handle it later when it becomes idle.
     #[wrapper_type(Agent)]
+    #[allow(clippy::type_complexity)]
     pub struct AgentState {
         model_client: Option<ModelClient>,
         tool_executor: ToolExecutor,
@@ -37,7 +47,7 @@ define_actor! {
         next_task_id: u64,
 
         on_idle: Option<Box<dyn Fn() + Send + Sync>>,
-        on_transcript: Option<Box<dyn Fn(&str) + Send + Sync>>,
+        on_transcript: Option<Box<dyn Fn(&str, TranscriptSource) + Send + Sync>>,
         on_tool_call_request: Option<Box<dyn Fn(&ToolCallRequest) + Send + Sync>>,
         on_tool_result: Option<Box<dyn Fn(&str, &ToolResult) + Send + Sync>>,
     }
@@ -56,6 +66,7 @@ impl Agent {
     fn spawn_from_builder(builder: AgentBuilder) -> Self {
         let AgentBuilder {
             model_client,
+            system_prompt,
             on_idle,
             on_transcript,
             on_tool_call_request,
@@ -63,10 +74,18 @@ impl Agent {
             tools,
         } = builder;
 
+        let mut conversation = Conversation::default();
+        if let Some(system_prompt) = system_prompt {
+            conversation.items.push(ConversationItem {
+                msg: ModelMessage::System(system_prompt.clone()),
+                transcript: system_prompt,
+            });
+        }
+
         let state = AgentState {
             model_client: Some(model_client),
             tool_executor: ToolExecutor::with_tools(tools),
-            conversation: Default::default(),
+            conversation,
             current_stage: Default::default(),
             pending_inputs: Default::default(),
             pending_tool_results: Default::default(),

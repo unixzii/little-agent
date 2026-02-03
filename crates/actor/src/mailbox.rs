@@ -42,7 +42,7 @@ pub struct Mailbox<S> {
 
 impl<S: Send + Sync + 'static> Mailbox<S> {
     #[inline]
-    pub fn new() -> MailboxParts<S> {
+    pub fn new_parts() -> MailboxParts<S> {
         let (msg_tx, msg_rx) = mpsc::unbounded_channel();
         let (kill_tx, kill_rx) = watch::channel(false);
         MailboxParts {
