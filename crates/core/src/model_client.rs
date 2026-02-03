@@ -1,36 +1,42 @@
 use std::future::poll_fn;
-use std::pin::pin;
+use std::pin::{Pin, pin};
+use std::sync::Arc;
 
 use little_agent_model::{
     ModelFinishReason, ModelProvider, ModelProviderError, ModelRequest,
     ModelResponse, ModelResponseEvent, OpaqueMessage, ToolCallRequest,
 };
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use tracing::Instrument;
+
+type SendRequestResult =
+    Result<ModelClientResponse, Box<dyn ModelProviderError>>;
+type BoxedSendRequestFuture =
+    Pin<Box<dyn Future<Output = SendRequestResult> + Send>>;
 
 /// A wrapper around a model provider that maintains an execution
 /// environment for the provider and provides a type-erased interface
 /// for the other modules.
-///
-/// When dropped, the client cancels all its in-flight requests.
+#[derive(Clone)]
 pub struct ModelClient {
-    req_tx: mpsc::UnboundedSender<ModelClientRequest>,
-    client_task: JoinHandle<()>,
+    handler_fn:
+        Arc<dyn Fn(ModelRequest) -> BoxedSendRequestFuture + Send + Sync>,
 }
 
 impl ModelClient {
     #[inline]
     pub fn new<P: ModelProvider + 'static>(provider: P) -> Self {
-        let (req_tx, req_rx) = mpsc::unbounded_channel();
-        let client_task = tokio::spawn(async move {
-            serve_client(provider, req_rx)
-                .instrument(debug_span!("model client"))
-                .await;
-        });
         Self {
-            req_tx,
-            client_task,
+            handler_fn: Arc::new(move |req| {
+                let fut = provider.send_request(&req);
+                Box::pin(
+                    async move {
+                        trace!("got a request: {:?}", req);
+                        let resp_or_err = fut.await;
+                        handle_response::<P>(resp_or_err).await
+                    }
+                    .instrument(trace_span!("model client req")),
+                )
+            }),
         }
     }
 
@@ -40,67 +46,12 @@ impl ModelClient {
     ///
     /// This method is cancel safe. The response stops streaming further
     /// events when this operation is cancelled.
+    #[inline]
     pub async fn send_request(
         &self,
         req: ModelRequest,
     ) -> Result<ModelClientResponse, Box<dyn ModelProviderError>> {
-        let (resp_event_tx, mut resp_event_rx) = mpsc::unbounded_channel();
-        let (error_tx, mut error_rx) = mpsc::unbounded_channel();
-        let (opaque_msg_tx, mut opaque_msg_rx) = mpsc::unbounded_channel();
-
-        let client_req = ModelClientRequest {
-            model_request: req,
-            resp_event_tx,
-            error_tx,
-            opaque_msg_tx,
-        };
-        self.req_tx
-            .send(client_req)
-            .expect("task has been dropped too early");
-
-        // Try collecting the events first.
-        let mut transcript = String::new();
-        let mut tool_calls = Vec::new();
-        let mut finish_reason = None;
-        loop {
-            let Some(resp_event) = resp_event_rx.recv().await else {
-                break;
-            };
-            match resp_event {
-                ModelResponseEvent::MessageDelta(msg) => {
-                    transcript.push_str(&msg);
-                }
-                ModelResponseEvent::ToolCall(req) => {
-                    tool_calls.push(req);
-                }
-                ModelResponseEvent::Completed(reason) => {
-                    finish_reason = Some(reason);
-                }
-            }
-        }
-
-        // We are now out of the event receiving loop, check if there're
-        // any errors before concluding the request.
-        if let Some(err) = error_rx.recv().await {
-            return Err(err);
-        }
-
-        // The request has been handled gracefully without errors. Now
-        // try receiving the opaque message.
-        let opaque_msg = opaque_msg_rx.recv().await;
-
-        Ok(ModelClientResponse {
-            transcript,
-            opaque_msg,
-            tool_calls,
-            finish_reason,
-        })
-    }
-}
-
-impl Drop for ModelClient {
-    fn drop(&mut self) {
-        self.client_task.abort();
+        (self.handler_fn)(req).await
     }
 }
 
@@ -115,44 +66,25 @@ pub struct ModelClientResponse {
     pub finish_reason: Option<ModelFinishReason>,
 }
 
-struct ModelClientRequest {
-    model_request: ModelRequest,
-    resp_event_tx: mpsc::UnboundedSender<ModelResponseEvent>,
-    error_tx: mpsc::UnboundedSender<Box<dyn ModelProviderError>>,
-    opaque_msg_tx: mpsc::UnboundedSender<OpaqueMessage>,
-}
-
-#[inline]
-async fn serve_client<P: ModelProvider + 'static>(
-    provider: P,
-    mut req_rx: mpsc::UnboundedReceiver<ModelClientRequest>,
-) {
-    // We don't want to handle parallel requests in one agent, so any new
-    // requests will be enqueued and handled sequentially.
-    while let Some(req) = req_rx.recv().await {
-        handle_client_request(req, &provider)
-            .instrument(trace_span!("request"))
-            .await;
-    }
-    debug!("will terminate");
-}
-
-async fn handle_client_request<P: ModelProvider + 'static>(
-    req: ModelClientRequest,
-    provider: &P,
-) {
-    trace!("got a request: {:?}", req.model_request);
-    let resp_or_err = provider.send_request(&req.model_request).await;
+async fn handle_response<P: ModelProvider + 'static>(
+    resp_or_err: Result<P::Response, P::Error>,
+) -> SendRequestResult {
     let resp = match resp_or_err {
         Ok(resp) => resp,
         Err(err) => {
             error!("got an error: {err:?}");
-            req.error_tx.send(Box::new(err)).ok();
-            return;
+            // req.error_tx.send(Box::new(err)).ok();
+            return Err(Box::new(err));
         }
     };
 
+    let mut transcript = String::new();
+    let opaque_msg;
+    let mut tool_calls = Vec::new();
+    let mut finish_reason = None;
+
     trace!("start receiving events");
+
     let mut pinned_resp = pin!(resp);
     loop {
         let event_or_err =
@@ -161,25 +93,39 @@ async fn handle_client_request<P: ModelProvider + 'static>(
             Ok(event) => event,
             Err(err) => {
                 error!("got an error: {err:?}");
-                req.error_tx.send(Box::new(err)).ok();
-                break;
+                return Err(Box::new(err));
             }
         };
+
         let Some(event) = event else {
-            // Try getting the opaque message for this response.
-            let opaque_msg = pinned_resp.make_opaque_message();
-            if let Some(opaque_msg) = opaque_msg {
-                req.opaque_msg_tx.send(opaque_msg).ok();
-            }
+            // The request has been handled gracefully without errors,
+            // now try getting the opaque message for this response.
+            opaque_msg = pinned_resp.make_opaque_message();
             break;
         };
         trace!("got an event: {event:?}");
-        if req.resp_event_tx.send(event).is_err() {
-            trace!("cancelled");
-            break;
+
+        match event {
+            ModelResponseEvent::MessageDelta(msg) => {
+                transcript.push_str(&msg);
+            }
+            ModelResponseEvent::ToolCall(req) => {
+                tool_calls.push(req);
+            }
+            ModelResponseEvent::Completed(reason) => {
+                finish_reason = Some(reason);
+            }
         }
     }
+
     trace!("finished a request");
+
+    Ok(ModelClientResponse {
+        transcript,
+        opaque_msg,
+        tool_calls,
+        finish_reason,
+    })
 }
 
 #[cfg(test)]
