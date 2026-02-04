@@ -1,0 +1,18 @@
+[package]
+name = "little-agent-openai-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+futures-util = { version = "0.3", default-features = false }
+little-agent-model = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+pin-project-lite = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }

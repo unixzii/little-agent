@@ -1,6 +1,5 @@
 use little_agent_core::{Agent, AgentBuilder, TranscriptSource};
 use little_agent_model::ModelProvider;
-use little_agent_test_model::TestModelProvider;
 use tokio::task::JoinHandle;
 
 use crate::tools::{ShellTool, ShellToolApproval};
@@ -14,13 +13,10 @@ pub struct SessionBuilder {
 }
 
 impl SessionBuilder {
-    /// Creates a session builder with a test model.
-    #[inline]
-    pub fn with_test_model(provider: TestModelProvider) -> Self {
-        Self::with_model_provider(provider)
-    }
-
-    fn with_model_provider<M: ModelProvider + 'static>(provider: M) -> Self {
+    /// Creates a session builder with a specified model provider.
+    pub fn with_model_provider<M: ModelProvider + 'static>(
+        provider: M,
+    ) -> Self {
         let agent_builder = AgentBuilder::with_model_provider(provider);
         Self {
             agent_builder,

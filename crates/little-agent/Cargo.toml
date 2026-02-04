@@ -14,7 +14,7 @@ cli = ["dep:indicatif", "dep:tracing-subscriber"]
 
 [dependencies]
 little-agent-model = { workspace = true }
-little-agent-test-model = { workspace = true }
+little-agent-openai-model = { workspace = true }
 little-agent-core = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

@@ -3,6 +3,7 @@
 #[macro_use]
 extern crate tracing;
 
+use std::env;
 use std::io::Write as _;
 use std::time::Duration;
 
@@ -10,8 +11,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use little_agent::SessionBuilder;
 use little_agent::tools::ShellToolApproval;
 use little_agent_core::TranscriptSource;
-use little_agent_model::ToolCallRequest;
-use little_agent_test_model::{PresetEvent, PresetResponse, TestModelProvider};
+use little_agent_openai_model::{OpenAIConfigBuilder, OpenAIProvider};
 use owo_colors::OwoColorize;
 use tokio::io::{self, AsyncBufReadExt};
 use tokio::select;
@@ -32,35 +32,32 @@ async fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let mut model_provider = TestModelProvider::default();
-    model_provider.set_delay(Duration::from_millis(300));
-    model_provider.add_user_turn();
-    model_provider.add_user_turn();
-    model_provider.add_assistant_turn(PresetResponse {
-        events: vec![
-            PresetEvent::MessageDelta(
-                "Let me check the project structure.".to_owned(),
-            ),
-            PresetEvent::ToolCall(ToolCallRequest {
-                id: "shell:0".to_owned(),
-                name: "shell".to_owned(),
-                arguments: serde_json::json!({
-                    "cmdline": "ls -la"
-                }),
-            }),
-        ],
-    });
-    model_provider.add_user_turn();
-    model_provider.add_assistant_turn(PresetResponse {
-        events: vec![PresetEvent::MessageDelta(
-            "This looks like a Rust project.".to_owned(),
-        )],
-    });
+    let Ok(api_key) = env::var("OPENAI_API_KEY") else {
+        eprintln!("OPENAI_API_KEY environment variable is not set");
+        return;
+    };
+    let Ok(base_url) = env::var("OPENAI_BASE_URL") else {
+        eprintln!("OPENAI_BASE_URL environment variable is not set");
+        return;
+    };
+    let Ok(model) = env::var("OPENAI_MODEL") else {
+        eprintln!("OPENAI_MODEL environment variable is not set");
+        return;
+    };
+
+    let config = OpenAIConfigBuilder::with_api_key(api_key)
+        .with_base_url(base_url)
+        .with_model(model)
+        .build();
+    let model_provider = OpenAIProvider::new(config);
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 
-    let session = SessionBuilder::with_test_model(model_provider)
-        .with_system_prompt(include_str!("./system_prompt.md"))
+    let session = SessionBuilder::with_model_provider(model_provider)
+        .with_system_prompt(
+            include_str!("./system_prompt.md")
+                .replace("{{HOST_OS}}", host_os()),
+        )
         .on_idle({
             let event_tx = event_tx.clone();
             move || {
@@ -145,9 +142,8 @@ async fn main() {
                     let Some(line) = read_line().await else {
                         break 'outer;
                     };
-
-                    if line.is_empty() || line.trim().eq_ignore_ascii_case("y")
-                    {
+                    let line = line.trim();
+                    if line.is_empty() || line.eq_ignore_ascii_case("y") {
                         approval.approve();
                     } else {
                         approval.reject();
@@ -187,5 +183,16 @@ async fn read_line() -> Option<String> {
             error!("error reading input: {}", err);
             None
         }
+    }
+}
+
+#[inline]
+fn host_os() -> &'static str {
+    let os = std::env::consts::OS;
+    match os {
+        "linux" => "Linux",
+        "macos" => "macOS",
+        "windows" => "Windows",
+        _ => "some other OS",
     }
 }
