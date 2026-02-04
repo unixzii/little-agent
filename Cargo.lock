@@ -699,6 +699,7 @@ dependencies = [
  "bytes",
  "futures-util",
  "little-agent-model",
+ "mime",
  "pin-project-lite",
  "reqwest",
  "serde",

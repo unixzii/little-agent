@@ -9,6 +9,7 @@ futures-util = { version = "0.3", default-features = false }
 little-agent-model = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+mime = { workspace = true }
 pin-project-lite = { workspace = true }
 bytes = { workspace = true }
 tracing = { workspace = true }

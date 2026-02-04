@@ -64,22 +64,19 @@ impl Sse {
         };
 
         // Parse the field line.
-        let field = &self.buf[0..eol_idx];
-        let mut field_parts = field.split(": ");
-        let Some(header) = field_parts.next() else {
+        let field = &self.buf[..eol_idx];
+        let Some(delim_idx) = field.find(": ") else {
             return Err(Error::InvalidPayload);
         };
+        let header = &field[..delim_idx];
         if header != "data" {
             // Other events are not supported.
             return Err(Error::InvalidPayload);
         }
-        let Some(data) = field_parts.next() else {
-            return Err(Error::InvalidPayload);
-        };
-        let data = data.to_owned();
+        let data = field[delim_idx + 2..].to_owned();
 
         // Consume the bytes from the buffer.
-        self.buf.drain(0..eol_idx + 2);
+        self.buf.drain(..eol_idx + 2);
 
         Ok(Some(data))
     }
