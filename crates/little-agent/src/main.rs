@@ -152,7 +152,9 @@ async fn main() {
                     println!();
                 }
                 SessionEvent::Transcript(transcript, source) => {
-                    if source == TranscriptSource::Assistant {
+                    if source == TranscriptSource::Assistant
+                        && !transcript.is_empty()
+                    {
                         println!(
                             "{}🤖 {}",
                             BAR_CHAR.bright_cyan(),
