@@ -5,6 +5,7 @@
 
 #![deny(missing_docs)]
 
+#[allow(unused_imports)]
 #[macro_use]
 extern crate tracing;
 

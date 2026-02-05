@@ -1,15 +1,16 @@
 //! Tool call supports.
 
+mod approval;
 mod error;
-mod executor;
-
-use std::pin::Pin;
+mod manager;
+mod object;
 
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+pub use approval::Approval;
 pub use error::{Error, ErrorKind};
-pub(crate) use executor::Executor;
+pub(crate) use manager::Manager;
 
 /// The result of a tool call.
 pub type ToolResult = Result<String, Error>;
@@ -25,7 +26,7 @@ pub type ToolResult = Result<String, Error>;
 /// which can be set during initialization, and copy it when executing.
 pub trait Tool: Send + Sync + 'static {
     /// The type of input that the tool accepts.
-    type Input: DeserializeOwned;
+    type Input: DeserializeOwned + Send;
 
     /// Returns the name of the tool.
     fn name(&self) -> &str;
@@ -36,6 +37,9 @@ pub trait Tool: Send + Sync + 'static {
     /// Returns the parameter schema of the tool.
     fn parameter_schema(&self) -> &Value;
 
+    /// Makes an approval for calling this tool with the given input.
+    fn make_approval(&self, input: &Self::Input) -> Approval;
+
     /// Executes the tool with the given input.
     ///
     /// This method must return a future that is fully independent of `self`,
@@ -44,53 +48,4 @@ pub trait Tool: Send + Sync + 'static {
         &self,
         input: Self::Input,
     ) -> impl Future<Output = ToolResult> + Send + 'static;
-}
-
-pub(crate) trait ToolObject: Send + Sync + 'static {
-    fn name(&self) -> &str;
-
-    fn description(&self) -> &str;
-
-    fn parameter_schema(&self) -> &Value;
-
-    fn execute(
-        &self,
-        arguments: Value,
-    ) -> Pin<Box<dyn Future<Output = ToolResult> + Send>>;
-}
-
-pub(crate) struct AnyTool<T: Tool>(pub T);
-
-impl<T: Tool> ToolObject for AnyTool<T> {
-    #[inline]
-    fn name(&self) -> &str {
-        self.0.name()
-    }
-
-    #[inline]
-    fn description(&self) -> &str {
-        self.0.description()
-    }
-
-    #[inline]
-    fn parameter_schema(&self) -> &Value {
-        self.0.parameter_schema()
-    }
-
-    #[inline]
-    fn execute(
-        &self,
-        arguments: Value,
-    ) -> Pin<Box<dyn Future<Output = ToolResult> + Send>> {
-        let input: T::Input = match serde_json::from_value(arguments) {
-            Ok(input) => input,
-            Err(err) => {
-                let reason = format!("{err}");
-                return Box::pin(std::future::ready(ToolResult::Err(
-                    Error::invalid_input().with_reason(reason),
-                )));
-            }
-        };
-        Box::pin(self.0.execute(input))
-    }
 }

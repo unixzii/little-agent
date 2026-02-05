@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use tokio::time::timeout;
 
 use crate::AgentBuilder;
-use crate::tool::{Error as ToolError, Tool, ToolResult};
+use crate::tool::{Approval, Error as ToolError, Tool, ToolResult};
 
 #[tokio::test]
 async fn test_simple_message() {
@@ -68,6 +68,10 @@ impl Tool for ListTodosTool {
         EMPTY_SCHEMA
     }
 
+    fn make_approval(&self, _input: &Self::Input) -> Approval {
+        Approval::new(self.description(), "")
+    }
+
     fn execute(
         &self,
         _input: Self::Input,
@@ -91,6 +95,10 @@ impl Tool for ListCalendarEventsTool {
 
     fn parameter_schema(&self) -> &Value {
         EMPTY_SCHEMA
+    }
+
+    fn make_approval(&self, _input: &Self::Input) -> Approval {
+        Approval::new(self.description(), "")
     }
 
     fn execute(
@@ -130,7 +138,6 @@ async fn test_tool_call() {
     });
 
     let tool_call_requests = Arc::new(Mutex::new(vec![]));
-    let tool_results = Arc::new(Mutex::new(vec![]));
     let (idle_tx, mut idle_rx) = watch::channel::<bool>(false);
 
     let agent = AgentBuilder::with_model_provider(model_provider)
@@ -139,16 +146,11 @@ async fn test_tool_call() {
         .on_tool_call_request({
             let tool_call_requests = Arc::clone(&tool_call_requests);
             move |request| {
-                tool_call_requests.lock().unwrap().push(request.clone());
-            }
-        })
-        .on_tool_result({
-            let tool_results = Arc::clone(&tool_results);
-            move |id, result| {
-                tool_results
+                tool_call_requests
                     .lock()
                     .unwrap()
-                    .push((id.to_owned(), result.clone()));
+                    .push(request.what().to_owned());
+                request.approve();
             }
         })
         .on_idle(move || {
@@ -164,31 +166,6 @@ async fn test_tool_call() {
 
     let tool_call_requests = tool_call_requests.lock().unwrap();
     assert_eq!(tool_call_requests.len(), 2);
-    assert_eq!(
-        tool_call_requests[0],
-        ToolCallRequest {
-            id: "tool:1".to_owned(),
-            name: "list_todos".to_owned(),
-            arguments: json!({}),
-        }
-    );
-    assert_eq!(
-        tool_call_requests[1],
-        ToolCallRequest {
-            id: "tool:2".to_owned(),
-            name: "list_calendar_events".to_owned(),
-            arguments: json!({}),
-        }
-    );
-
-    let tool_results = tool_results.lock().unwrap();
-    assert_eq!(tool_results.len(), 2);
-    assert_eq!(
-        tool_results[0],
-        ("tool:1".to_owned(), Ok("Found 0 todos".to_owned()))
-    );
-    assert_eq!(
-        tool_results[1],
-        ("tool:2".to_owned(), Err(ToolError::execution_error()))
-    );
+    assert_eq!(tool_call_requests[0], "Lists all todos");
+    assert_eq!(tool_call_requests[1], "Lists all calendar events");
 }

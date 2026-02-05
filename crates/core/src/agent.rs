@@ -6,13 +6,13 @@ mod tests;
 use std::collections::{HashMap, VecDeque};
 
 use little_agent_actor::define_actor;
-use little_agent_model::{ModelMessage, ToolCallRequest};
+use little_agent_model::ModelMessage;
 use tokio::task::JoinHandle;
 
 use crate::agent::state::EnqueueUserInput;
 use crate::conversation::{Conversation, Item as ConversationItem};
 use crate::model_client::ModelClient;
-use crate::tool::{Executor as ToolExecutor, ToolResult};
+use crate::tool::{Manager as ToolManager, ToolResult};
 pub use builder::AgentBuilder;
 use state::AgentStage;
 
@@ -38,7 +38,7 @@ define_actor! {
     #[allow(clippy::type_complexity)]
     pub struct AgentState {
         model_client: Option<ModelClient>,
-        tool_executor: ToolExecutor,
+        tool_manager: ToolManager,
         conversation: Conversation,
         current_stage: AgentStage,
         pending_inputs: VecDeque<String>,
@@ -48,8 +48,6 @@ define_actor! {
 
         on_idle: Option<Box<dyn Fn() + Send + Sync>>,
         on_transcript: Option<Box<dyn Fn(&str, TranscriptSource) + Send + Sync>>,
-        on_tool_call_request: Option<Box<dyn Fn(&ToolCallRequest) + Send + Sync>>,
-        on_tool_result: Option<Box<dyn Fn(&str, &ToolResult) + Send + Sync>>,
     }
 }
 
@@ -66,12 +64,10 @@ impl Agent {
     fn spawn_from_builder(builder: AgentBuilder) -> Self {
         let AgentBuilder {
             model_client,
+            tool_manager,
             system_prompt,
             on_idle,
             on_transcript,
-            on_tool_call_request,
-            on_tool_result,
-            tools,
         } = builder;
 
         let mut conversation = Conversation::default();
@@ -84,7 +80,7 @@ impl Agent {
 
         let state = AgentState {
             model_client: Some(model_client),
-            tool_executor: ToolExecutor::with_tools(tools),
+            tool_manager,
             conversation,
             current_stage: Default::default(),
             pending_inputs: Default::default(),
@@ -93,8 +89,6 @@ impl Agent {
             next_task_id: 1,
             on_idle,
             on_transcript,
-            on_tool_call_request,
-            on_tool_result,
         };
         Self::spawn(state, Some("agent"))
     }

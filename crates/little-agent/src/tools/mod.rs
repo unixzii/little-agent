@@ -2,4 +2,4 @@
 
 mod shell;
 
-pub use shell::{ShellTool, ShellToolApproval};
+pub use shell::ShellTool;

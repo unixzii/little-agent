@@ -1,24 +1,32 @@
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use little_agent_model::{ModelTool, ToolCallRequest};
 
-use crate::tool::{ToolObject, ToolResult};
+use crate::Tool;
+use crate::tool::object::{ToolObject, ToolObjectImpl};
+use crate::tool::{Approval, ToolResult};
 
-/// An executor that handles tool call requests from the model.
-pub struct Executor {
-    tools: HashMap<String, Box<dyn ToolObject>>,
+/// An object that manages toolset and handles requests from the model.
+#[derive(Default)]
+pub struct Manager {
+    tools: HashMap<String, Arc<dyn ToolObject>>,
+    on_request: Option<Box<dyn Fn(Approval) + Send + Sync>>,
 }
 
-impl Executor {
-    pub fn with_tools(tools: Vec<Box<dyn ToolObject>>) -> Self {
-        let mut tool_map = HashMap::with_capacity(tools.len());
-        for tool in tools {
-            let name = tool.name();
-            tool_map.insert(name.to_owned(), tool);
-        }
-        let tools = tool_map;
-        Self { tools }
+impl Manager {
+    pub fn add_tool<T: Tool + 'static>(&mut self, tool: T) {
+        let name = tool.name().to_owned();
+        self.tools.insert(name, Arc::new(ToolObjectImpl(tool)));
+    }
+
+    #[inline]
+    pub fn on_request<F: Fn(Approval) + Send + Sync + 'static>(
+        &mut self,
+        on_request: F,
+    ) {
+        self.on_request = Some(Box::new(on_request));
     }
 
     #[inline]
@@ -39,17 +47,19 @@ impl Executor {
     {
         let mut spawner = spawner;
 
-        let span = debug_span!("tool executor");
+        let span = debug_span!("tool manager");
         let _enter = span.enter();
+
         for req in requests {
             let Some(tool) = self.tools.get(&req.name) else {
                 warn!("tool not found: {}", req.name);
                 continue;
             };
+
             let id = req.id;
             let arguments = req.arguments;
             trace!("spawning a tool ({id}) with args: {arguments:?}");
-            spawner(id, tool.execute(arguments));
+            spawner(id, Arc::clone(tool).execute(arguments, &self.on_request));
         }
     }
 }
@@ -61,7 +71,6 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::tool::{AnyTool, Tool};
 
     static EMPTY_SCHEMA: &Value = &Value::Null;
 
@@ -82,6 +91,10 @@ mod tests {
             EMPTY_SCHEMA
         }
 
+        fn make_approval(&self, _input: &Self::Input) -> Approval {
+            Approval::new("", "")
+        }
+
         fn execute(
             &self,
             _input: Self::Input,
@@ -92,7 +105,8 @@ mod tests {
 
     #[test]
     fn test_handle_requests() {
-        let executor = Executor::with_tools(vec![Box::new(AnyTool(TestTool))]);
+        let mut manager = Manager::default();
+        manager.add_tool(TestTool);
 
         let requests = vec![ToolCallRequest {
             id: "tool:1".to_owned(),
@@ -101,7 +115,7 @@ mod tests {
         }];
 
         let mut spawned_ids: Vec<String> = vec![];
-        executor.handle_requests(requests, |id, _future| {
+        manager.handle_requests(requests, |id, _future| {
             spawned_ids.push(id);
         });
 
@@ -116,7 +130,7 @@ mod tests {
         }];
 
         let mut spawned_ids: Vec<String> = vec![];
-        executor.handle_requests(requests, |id, _future| {
+        manager.handle_requests(requests, |id, _future| {
             spawned_ids.push(id);
         });
 

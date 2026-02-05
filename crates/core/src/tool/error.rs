@@ -8,8 +8,8 @@ pub enum ErrorKind {
     InvalidInput,
     /// Error occurred while executing the tool.
     ExecutionError,
-    /// The tool was not allowed to execute.
-    PermissionDenied,
+    /// The tool was not allowed to execute by user.
+    UserRejected,
 }
 
 impl Display for ErrorKind {
@@ -17,7 +17,7 @@ impl Display for ErrorKind {
         match self {
             ErrorKind::InvalidInput => write!(f, "Invalid input"),
             ErrorKind::ExecutionError => write!(f, "Execution error"),
-            ErrorKind::PermissionDenied => write!(f, "Permission denied"),
+            ErrorKind::UserRejected => write!(f, "User rejected"),
         }
     }
 }
@@ -48,11 +48,11 @@ impl Error {
         }
     }
 
-    /// Creates a new error with the `PermissionDenied` kind.
+    /// Creates a new error with the `UserRejected` kind.
     #[inline]
-    pub fn permission_denied() -> Self {
+    pub fn user_rejected() -> Self {
         Self {
-            kind: ErrorKind::PermissionDenied,
+            kind: ErrorKind::UserRejected,
             reason: None,
         }
     }

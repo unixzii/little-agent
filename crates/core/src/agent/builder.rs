@@ -1,23 +1,19 @@
 use little_agent_model::ModelProvider;
-use little_agent_model::ToolCallRequest;
 
 use super::{Agent, TranscriptSource};
+use crate::Tool;
 use crate::model_client::ModelClient;
-use crate::tool::{AnyTool, Tool, ToolObject, ToolResult};
+use crate::tool::{Approval, Manager as ToolManager};
 
 /// [`Agent`] builder.
 #[allow(clippy::type_complexity)]
 pub struct AgentBuilder {
     pub(crate) model_client: ModelClient,
+    pub(crate) tool_manager: ToolManager,
     pub(crate) system_prompt: Option<String>,
     pub(crate) on_idle: Option<Box<dyn Fn() + Send + Sync>>,
     pub(crate) on_transcript:
         Option<Box<dyn Fn(&str, TranscriptSource) + Send + Sync>>,
-    pub(crate) on_tool_call_request:
-        Option<Box<dyn Fn(&ToolCallRequest) + Send + Sync>>,
-    pub(crate) on_tool_result:
-        Option<Box<dyn Fn(&str, &ToolResult) + Send + Sync>>,
-    pub(crate) tools: Vec<Box<dyn ToolObject>>,
 }
 
 impl AgentBuilder {
@@ -28,12 +24,10 @@ impl AgentBuilder {
     ) -> Self {
         Self {
             model_client: ModelClient::new(provider),
+            tool_manager: Default::default(),
             system_prompt: None,
             on_idle: None,
             on_transcript: None,
-            on_tool_call_request: None,
-            on_tool_result: None,
-            tools: vec![],
         }
     }
 
@@ -65,30 +59,22 @@ impl AgentBuilder {
     }
 
     /// Attaches a callback to be invoked when a tool call request is received.
+    ///
+    /// The receiver can either approve or reject the request. If this callback
+    /// is not provided, the request will be automatically approved.
     #[inline]
     pub fn on_tool_call_request(
         mut self,
-        on_tool_call_request: impl Fn(&ToolCallRequest) + Send + Sync + 'static,
+        on_tool_call_request: impl Fn(Approval) + Send + Sync + 'static,
     ) -> Self {
-        self.on_tool_call_request = Some(Box::new(on_tool_call_request));
-        self
-    }
-
-    /// Attaches a callback to be invoked when a tool result is received.
-    #[inline]
-    pub fn on_tool_result(
-        mut self,
-        on_tool_result: impl Fn(&str, &ToolResult) + Send + Sync + 'static,
-    ) -> Self {
-        self.on_tool_result = Some(Box::new(on_tool_result));
+        self.tool_manager.on_request(on_tool_call_request);
         self
     }
 
     /// Registers a tool.
     #[inline]
     pub fn with_tool<T: Tool>(mut self, tool: T) -> Self {
-        let tool = Box::new(AnyTool(tool));
-        self.tools.push(tool);
+        self.tool_manager.add_tool(tool);
         self
     }
 

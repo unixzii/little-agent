@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use indicatif::{ProgressBar, ProgressStyle};
 use little_agent::SessionBuilder;
-use little_agent::tools::ShellToolApproval;
 use little_agent_core::TranscriptSource;
+use little_agent_core::tool::Approval as ToolApproval;
 use little_agent_openai_model::{OpenAIConfigBuilder, OpenAIProvider};
 use owo_colors::OwoColorize;
 use tokio::io::{self, AsyncBufReadExt};
@@ -21,7 +21,7 @@ use tokio::time::sleep;
 enum SessionEvent {
     Idle,
     Transcript(String, TranscriptSource),
-    ShellRequest(ShellToolApproval),
+    ToolCallRequest(ToolApproval),
 }
 
 const BAR_CHAR: &str = "▎";
@@ -75,10 +75,10 @@ async fn main() {
                     .ok();
             }
         })
-        .on_shell_request({
+        .on_tool_call_request({
             let event_tx = event_tx.clone();
             move |approval| {
-                event_tx.send(SessionEvent::ShellRequest(approval)).ok();
+                event_tx.send(SessionEvent::ToolCallRequest(approval)).ok();
             }
         })
         .build();
@@ -129,13 +129,10 @@ async fn main() {
             progress_bar = None;
 
             match event {
-                SessionEvent::ShellRequest(approval) => {
+                SessionEvent::ToolCallRequest(approval) => {
                     let bar = BAR_CHAR.bright_yellow();
-                    println!("\n{bar}⚠️  Agent wants to run command:");
-                    println!(
-                        "{bar}{}",
-                        approval.cmdline().bright_white().bold()
-                    );
+                    println!("\n{bar}⚠️ {}", approval.justification());
+                    println!("{bar}{}", approval.what().bright_white().bold());
                     print!("Proceed? [Y/n]: ");
                     std::io::stdout().flush().unwrap();
 
@@ -146,7 +143,7 @@ async fn main() {
                     if line.is_empty() || line.eq_ignore_ascii_case("y") {
                         approval.approve();
                     } else {
-                        approval.reject();
+                        approval.reject(None);
                     }
 
                     println!();

@@ -1,37 +1,12 @@
 use std::io;
 
-use little_agent_core::tool::{Error as ToolError, Tool, ToolResult};
+use little_agent_core::tool::{
+    Approval as ToolApproval, Error as ToolError, Tool, ToolResult,
+};
 use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::process::Command;
-use tokio::sync::{mpsc, oneshot};
-
-/// A pending approval for running a shell command.
-pub struct ShellToolApproval {
-    cmdline: String,
-    approved_tx: oneshot::Sender<bool>,
-}
-
-impl ShellToolApproval {
-    /// Returns the command line to run.
-    #[inline]
-    pub fn cmdline(&self) -> &str {
-        &self.cmdline
-    }
-
-    /// Approves the request.
-    #[inline]
-    pub fn approve(self) -> bool {
-        self.approved_tx.send(true).is_ok()
-    }
-
-    /// Rejects the request.
-    #[inline]
-    pub fn reject(self) -> bool {
-        self.approved_tx.send(false).is_ok()
-    }
-}
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ShellToolParameters {
@@ -42,22 +17,22 @@ pub struct ShellToolParameters {
 /// A tool for running shell commands.
 pub struct ShellTool {
     parameter_schema: Value,
-    approval_tx: mpsc::Sender<ShellToolApproval>,
 }
 
 impl ShellTool {
-    /// Creates a new shell tool, returning the tool instance and an
-    /// [`mpsc::Receiver`] for approvals.
+    /// Creates a new shell tool.
     #[inline]
-    pub fn new() -> (Self, mpsc::Receiver<ShellToolApproval>) {
-        let (approval_tx, approval_rx) = mpsc::channel(1);
-        (
-            ShellTool {
-                approval_tx,
-                parameter_schema: schema_for!(ShellToolParameters).to_value(),
-            },
-            approval_rx,
-        )
+    pub fn new() -> Self {
+        ShellTool {
+            parameter_schema: schema_for!(ShellToolParameters).to_value(),
+        }
+    }
+}
+
+impl Default for ShellTool {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -78,30 +53,17 @@ The command line should be single line if possible. Strings collected from stdou
         &self.parameter_schema
     }
 
+    fn make_approval(&self, input: &Self::Input) -> ToolApproval {
+        ToolApproval::new(&input.cmdline, "Agent wants to run the command")
+    }
+
+    #[allow(clippy::manual_async_fn)]
     fn execute(
         &self,
         input: ShellToolParameters,
     ) -> impl Future<Output = ToolResult> + Send + 'static {
-        let approval_tx = self.approval_tx.clone();
         async move {
-            let cmdline = input.cmdline;
-
-            let (approved_tx, approved_rx) = oneshot::channel();
-            let approval = ShellToolApproval {
-                cmdline: cmdline.clone(),
-                approved_tx,
-            };
-            if approval_tx.send(approval).await.is_err() {
-                return Err(ToolError::permission_denied());
-            }
-            let Ok(approved) = approved_rx.await else {
-                return Err(ToolError::permission_denied());
-            };
-            if !approved {
-                return Err(ToolError::permission_denied());
-            }
-
-            run_command_line(&cmdline).await.map_err(|err| {
+            run_command_line(&input.cmdline).await.map_err(|err| {
                 ToolError::execution_error().with_reason(format!("{err}"))
             })
         }
@@ -121,8 +83,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_command_line() {
-        println!("{}", ShellTool::new().0.parameter_schema());
-
         let result = run_command_line("echo 'Hello, World!'").await;
         assert_eq!(result.unwrap(), "Hello, World!\n");
     }
