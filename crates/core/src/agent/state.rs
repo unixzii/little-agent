@@ -101,21 +101,26 @@ impl AgentState {
             .model_client
             .take()
             .expect("model client is already in use");
-        let handle_clone = handle.clone();
-        self.spawn_task(
+        let on_transcript = {
+            let handle = handle.clone();
+            move |transcript| {
+                let msg = TranscriptGeneratedMessage(transcript);
+                handle.send(msg).ok();
+            }
+        };
+        let task = {
+            let handle = handle.clone();
             |_| async move {
-                // TODO: Implement this.
-                let resp_res = model_client.send_request(request).await;
-
-                handle_clone
-                    .send(ModelClientRequestFinishedMessage {
-                        model_client,
-                        response: resp_res,
-                    })
-                    .ok();
-            },
-            handle,
-        );
+                let resp_res =
+                    model_client.send_request(request, on_transcript).await;
+                let msg = ModelClientRequestFinishedMessage {
+                    model_client,
+                    response: resp_res,
+                };
+                handle.send(msg).ok();
+            }
+        };
+        self.spawn_task(task, handle);
     }
 
     fn build_model_request(&self) -> ModelRequest {
@@ -156,6 +161,17 @@ impl Message<AgentState> for EnqueueUserInput {
     }
 }
 
+#[derive(Debug)]
+struct TranscriptGeneratedMessage(pub String);
+
+impl Message<AgentState> for TranscriptGeneratedMessage {
+    fn handle(self, state: &mut AgentState, _handle: &Actor<AgentState>) {
+        if let Some(on_transcript) = &state.on_transcript {
+            on_transcript(&self.0, TranscriptSource::Assistant);
+        }
+    }
+}
+
 struct ModelClientRequestFinishedMessage {
     model_client: ModelClient,
     response: Result<ModelClientResponse, Box<dyn ModelProviderError>>,
@@ -178,9 +194,6 @@ impl Message<AgentState> for ModelClientRequestFinishedMessage {
 
         // Insert the message to the conversation.
         let transcript = resp.transcript;
-        if let Some(on_transcript) = &state.on_transcript {
-            on_transcript(&transcript, TranscriptSource::Assistant);
-        }
         let msg = if let Some(opaque_msg) = resp.opaque_msg {
             ModelMessage::Opaque(opaque_msg)
         } else {

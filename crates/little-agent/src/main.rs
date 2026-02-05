@@ -96,18 +96,21 @@ async fn main() {
         };
         session.send_message(line.trim());
 
+        let mut is_streaming_transcript = false;
         let mut progress_bar = None;
 
         loop {
-            // Create a new progress bar if it has been finished.
-            progress_bar
-                .get_or_insert_with(|| {
-                    let progress_bar = ProgressBar::new_spinner();
-                    progress_bar.set_style(progress_style.clone());
-                    progress_bar.set_message("🤔 Thinking...");
-                    progress_bar
-                })
-                .inc(1);
+            // Ensure progress bar is drawn if we're not streaming transcript.
+            if !is_streaming_transcript {
+                progress_bar
+                    .get_or_insert_with(|| {
+                        let progress_bar = ProgressBar::new_spinner();
+                        progress_bar.set_style(progress_style.clone());
+                        progress_bar.set_message("🤔 Thinking...");
+                        progress_bar
+                    })
+                    .inc(1);
+            }
 
             let sleep = sleep(Duration::from_millis(100));
             let event = select! {
@@ -130,6 +133,10 @@ async fn main() {
 
             match event {
                 SessionEvent::ToolCallRequest(approval) => {
+                    if is_streaming_transcript {
+                        println!();
+                    }
+
                     let bar = BAR_CHAR.bright_yellow();
                     println!("\n{bar}⚠️ {}", approval.justification());
                     println!("{bar}{}", approval.what().bright_white().bold());
@@ -146,22 +153,26 @@ async fn main() {
                         approval.reject(None);
                     }
 
+                    is_streaming_transcript = false;
                     println!();
                 }
-                SessionEvent::Transcript(transcript, source) => {
-                    if source == TranscriptSource::Assistant
-                        && !transcript.is_empty()
-                    {
-                        println!(
-                            "{}🤖 {}",
-                            BAR_CHAR.bright_cyan(),
-                            transcript.bright_white()
-                        );
+                SessionEvent::Transcript(transcript, source)
+                    if source.is_assistant() && !transcript.is_empty() =>
+                {
+                    let transcript = transcript.bright_white();
+                    if is_streaming_transcript {
+                        print!("{transcript}");
+                    } else {
+                        print!("{}🤖 {transcript}", BAR_CHAR.bright_cyan());
+                        is_streaming_transcript = true;
                     }
+                    std::io::stdout().flush().unwrap();
                 }
                 SessionEvent::Idle => {
+                    println!();
                     break;
                 }
+                _ => {}
             }
         }
     }

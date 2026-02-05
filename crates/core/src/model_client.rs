@@ -12,32 +12,37 @@ type SendRequestResult =
     Result<ModelClientResponse, Box<dyn ModelProviderError>>;
 type BoxedSendRequestFuture =
     Pin<Box<dyn Future<Output = SendRequestResult> + Send>>;
+#[rustfmt::skip]
+type HandlerFn = Arc<
+    dyn Fn(ModelRequest, Box<dyn Fn(String) + Send + 'static>)
+        -> BoxedSendRequestFuture + Send + Sync
+>;
 
 /// A wrapper around a model provider that maintains an execution
 /// environment for the provider and provides a type-erased interface
 /// for the other modules.
 #[derive(Clone)]
 pub struct ModelClient {
-    handler_fn:
-        Arc<dyn Fn(ModelRequest) -> BoxedSendRequestFuture + Send + Sync>,
+    handler_fn: HandlerFn,
 }
 
 impl ModelClient {
     #[inline]
     pub fn new<P: ModelProvider + 'static>(provider: P) -> Self {
-        Self {
-            handler_fn: Arc::new(move |req| {
-                let fut = provider.send_request(&req);
-                Box::pin(
-                    async move {
-                        trace!("got a request: {:?}", req);
-                        let resp_or_err = fut.await;
-                        handle_response::<P>(resp_or_err).await
-                    }
-                    .instrument(trace_span!("model client req")),
-                )
-            }),
-        }
+        // We have to erase the type `P`, since `ModelClient` doesn't have a
+        // generic parameter and we don't want it either.
+        let handler_fn: HandlerFn = Arc::new(move |req, on_transcript| {
+            let fut = provider.send_request(&req);
+            Box::pin(
+                async move {
+                    trace!("got a request: {:?}", req);
+                    let resp_or_err = fut.await;
+                    handle_response::<P>(resp_or_err, on_transcript).await
+                }
+                .instrument(trace_span!("model client req")),
+            )
+        });
+        Self { handler_fn }
     }
 
     /// Sends a request and returns the response.
@@ -50,8 +55,9 @@ impl ModelClient {
     pub async fn send_request(
         &self,
         req: ModelRequest,
+        on_transcript: impl Fn(String) + Send + 'static,
     ) -> Result<ModelClientResponse, Box<dyn ModelProviderError>> {
-        (self.handler_fn)(req).await
+        (self.handler_fn)(req, Box::new(on_transcript)).await
     }
 }
 
@@ -68,6 +74,7 @@ pub struct ModelClientResponse {
 
 async fn handle_response<P: ModelProvider + 'static>(
     resp_or_err: Result<P::Response, P::Error>,
+    on_transcript: Box<dyn Fn(String) + Send + 'static>,
 ) -> SendRequestResult {
     let resp = match resp_or_err {
         Ok(resp) => resp,
@@ -108,6 +115,7 @@ async fn handle_response<P: ModelProvider + 'static>(
         match event {
             ModelResponseEvent::MessageDelta(msg) => {
                 transcript.push_str(&msg);
+                on_transcript(msg);
             }
             ModelResponseEvent::ToolCall(req) => {
                 tool_calls.push(req);
@@ -130,6 +138,8 @@ async fn handle_response<P: ModelProvider + 'static>(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use little_agent_model::ModelMessage;
     use little_agent_test_model::{
         PresetEvent, PresetResponse, TestModelProvider,
@@ -152,15 +162,26 @@ mod tests {
         let model_client = ModelClient::new(model_provider);
 
         for _ in 0..3 {
+            let on_transcript_called = Arc::new(AtomicBool::new(false));
             let resp = model_client
-                .send_request(ModelRequest {
-                    messages: vec![ModelMessage::User("Hi".to_owned())],
-                    tools: vec![],
-                })
+                .send_request(
+                    ModelRequest {
+                        messages: vec![ModelMessage::User("Hi".to_owned())],
+                        tools: vec![],
+                    },
+                    {
+                        let on_transcript_called =
+                            Arc::clone(&on_transcript_called);
+                        move |_| {
+                            on_transcript_called.store(true, Ordering::Relaxed);
+                        }
+                    },
+                )
                 .await
                 .unwrap();
             assert_eq!(resp.transcript, "How are you?");
             assert!(resp.opaque_msg.is_some());
+            assert!(on_transcript_called.load(Ordering::Relaxed));
         }
     }
 
@@ -169,10 +190,13 @@ mod tests {
         let model_provider = TestModelProvider::default();
         let model_client = ModelClient::new(model_provider);
         let resp_or_err = model_client
-            .send_request(ModelRequest {
-                messages: vec![ModelMessage::User("Hi".to_owned())],
-                tools: vec![],
-            })
+            .send_request(
+                ModelRequest {
+                    messages: vec![ModelMessage::User("Hi".to_owned())],
+                    tools: vec![],
+                },
+                |_| {},
+            )
             .await;
         assert!(matches!(resp_or_err, Err(_)));
     }

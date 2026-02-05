@@ -44,9 +44,10 @@ async fn test_simple_message() {
         .unwrap();
 
     let transcripts = transcripts.lock().unwrap();
-    assert_eq!(transcripts.len(), 2);
+    assert_eq!(transcripts.len(), 3);
     assert_eq!(transcripts[0], "Hello");
-    assert_eq!(transcripts[1], "Hi, what can I do for you?");
+    assert_eq!(transcripts[1], "Hi, ");
+    assert_eq!(transcripts[2], "what can I do for you?");
 }
 
 static EMPTY_SCHEMA: &Value = &Value::Null;

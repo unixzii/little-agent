@@ -25,6 +25,14 @@ pub enum TranscriptSource {
     Assistant,
 }
 
+impl TranscriptSource {
+    /// Returns true if the transcript source is assistant.
+    #[inline]
+    pub fn is_assistant(&self) -> bool {
+        matches!(self, TranscriptSource::Assistant)
+    }
+}
+
 define_actor! {
     /// An agent instance, which maintains a session, a model provider, and
     /// internal state.
