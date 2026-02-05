@@ -5,6 +5,10 @@
 3. Message streaming.
 4. Iteration count limits.
 
+# Optimization
+
+1. String manipulations.
+
 # Coding Style
 
 1. Improve `Result` handling, add a method to explain why the result is discarded.

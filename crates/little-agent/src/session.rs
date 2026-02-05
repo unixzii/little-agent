@@ -65,6 +65,7 @@ impl SessionBuilder {
             .agent_builder
             .with_tool(ShellTool::new())
             .with_tool(GlobTool::new())
+            .with_tool(ReadFileTool::new())
             .build();
 
         Session { agent }
