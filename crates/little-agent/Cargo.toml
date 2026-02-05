@@ -21,6 +21,7 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 tracing = { workspace = true }
 owo-colors = "4"
+glob = "0.3.3"
 indicatif = { version = "0.18.3", optional = true }
 
 [dependencies.tracing-subscriber]

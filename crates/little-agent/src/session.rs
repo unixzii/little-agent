@@ -2,7 +2,7 @@ use little_agent_core::tool::Approval as ToolApproval;
 use little_agent_core::{Agent, AgentBuilder, TranscriptSource};
 use little_agent_model::ModelProvider;
 
-use crate::tools::ShellTool;
+use crate::tools::*;
 
 /// A session builder.
 ///
@@ -61,8 +61,11 @@ impl SessionBuilder {
 
     /// Builds a new session.
     pub fn build(self) -> Session {
-        let shell_tool = ShellTool::new();
-        let agent = self.agent_builder.with_tool(shell_tool).build();
+        let agent = self
+            .agent_builder
+            .with_tool(ShellTool::new())
+            .with_tool(GlobTool::new())
+            .build();
 
         Session { agent }
     }
