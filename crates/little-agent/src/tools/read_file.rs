@@ -152,14 +152,14 @@ fn format_reader_section<R: Read>(
     }
 
     let mut result = String::new();
-    result.push_str(&format!("==> {} <==\n", path));
+    result.push_str(&format!("==> {path} <==\n"));
 
     if !lines.is_empty() {
         let last_line_no = start_line + lines.len() - 1;
         let width = last_line_no.to_string().len();
         for (offset, line) in lines.into_iter().enumerate() {
             let line_no = start_line + offset;
-            result.push_str(&format!("{:>width$}: {line}\n", line_no));
+            result.push_str(&format!("{line_no:>width$}: {line}\n"));
         }
     }
 

@@ -91,11 +91,9 @@ This tool supports standard glob syntax like *, ?, and ** for recursive searches
                 let mut result = String::new();
                 // FIXME: Ok, the limit here may look arbitrary. And we need a
                 // mechanism to handle continuation.
-                for item in pattern.take(50) {
-                    if let Ok(item) = item {
-                        result.push_str(&item.to_string_lossy());
-                        result.push('\n');
-                    }
+                for item in pattern.take(50).flatten() {
+                    result.push_str(&item.to_string_lossy());
+                    result.push('\n');
                 }
                 result
             })
