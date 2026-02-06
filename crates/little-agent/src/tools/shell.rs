@@ -46,7 +46,7 @@ impl Tool for ShellTool {
     fn description(&self) -> &str {
         r#"
 Runs arbitrary commands like using a terminal.
-The command line should be single line if possible. Strings collected from stdout will be returned as the tool's output."#
+The command line should be single line if possible. Strings collected from stdout and stderr will be returned as the tool's output."#
     }
 
     fn parameter_schema(&self) -> &Value {
@@ -73,8 +73,13 @@ The command line should be single line if possible. Strings collected from stdou
 #[inline]
 async fn run_command_line(cmdline: &str) -> Result<String, io::Error> {
     let cmd = Command::new("sh").arg("-c").arg(cmdline).output().await?;
-    let stdout_str = String::from_utf8_lossy(&cmd.stdout).into_owned();
-    Ok(stdout_str)
+    let mut result = String::new();
+    result.push_str(&String::from_utf8_lossy(&cmd.stdout));
+    if !cmd.stderr.is_empty() {
+        result.push_str("\n==> STDERR <==\n");
+        result.push_str(&String::from_utf8_lossy(&cmd.stderr));
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
