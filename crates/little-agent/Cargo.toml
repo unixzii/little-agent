@@ -4,13 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lib]
+crate-type = ["lib", "cdylib"]
+
 [[bin]]
 name = "little-agent"
 required-features = ["cli"]
 
 [features]
-default = ["cli"]
+default = ["cli", "ffi"]
 cli = ["dep:indicatif", "dep:tracing-subscriber"]
+ffi = ["tokio/rt-multi-thread"]
 
 [dependencies]
 little-agent-model = { workspace = true }

@@ -9,6 +9,8 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "ffi")]
+pub mod ffi;
 mod session;
 pub mod tools;
 
