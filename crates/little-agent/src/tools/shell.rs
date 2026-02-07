@@ -1,3 +1,4 @@
+use std::env;
 use std::io;
 
 use little_agent_core::tool::{
@@ -71,13 +72,29 @@ The command line should be single line if possible. Strings collected from stdou
 }
 
 #[inline]
+fn create_command_with_inferred_shell() -> Command {
+    let Some(shell) = env::var_os("SHELL") else {
+        return Command::new("/bin/sh");
+    };
+    Command::new(shell)
+}
+
+#[inline]
 async fn run_command_line(cmdline: &str) -> Result<String, io::Error> {
-    let cmd = Command::new("sh").arg("-c").arg(cmdline).output().await?;
+    let output = create_command_with_inferred_shell()
+        .arg("-cli")
+        .arg(cmdline)
+        .output()
+        .await?;
+
     let mut result = String::new();
-    result.push_str(&String::from_utf8_lossy(&cmd.stdout));
-    if !cmd.stderr.is_empty() {
+    if !output.stdout.is_empty() {
+        result.push_str("==> STDOUT <==\n");
+        result.push_str(&String::from_utf8_lossy(&output.stdout));
+    }
+    if !output.stderr.is_empty() {
         result.push_str("\n==> STDERR <==\n");
-        result.push_str(&String::from_utf8_lossy(&cmd.stderr));
+        result.push_str(&String::from_utf8_lossy(&output.stderr));
     }
     Ok(result)
 }
@@ -89,6 +106,6 @@ mod tests {
     #[tokio::test]
     async fn test_run_command_line() {
         let result = run_command_line("echo 'Hello, World!'").await;
-        assert_eq!(result.unwrap(), "Hello, World!\n");
+        assert_eq!(result.unwrap(), "==> STDOUT <==\nHello, World!\n");
     }
 }
