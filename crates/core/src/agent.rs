@@ -4,9 +4,12 @@ mod state;
 mod tests;
 
 use std::collections::{HashMap, VecDeque};
+use std::time::Duration;
 
+use backoff::ExponentialBackoffBuilder;
+use backoff::backoff::Backoff;
 use little_agent_actor::define_actor;
-use little_agent_model::ModelMessage;
+use little_agent_model::{ModelMessage, ModelProviderError};
 use tokio::task::JoinHandle;
 
 use crate::agent::state::EnqueueUserInput;
@@ -48,6 +51,7 @@ define_actor! {
         model_client: Option<ModelClient>,
         tool_manager: ToolManager,
         conversation: Conversation,
+        retry_backoff: Box<dyn Backoff + Send + Sync>,
         current_stage: AgentStage,
         pending_inputs: VecDeque<String>,
         pending_tool_results: HashMap<String, Option<ToolResult>>,
@@ -55,6 +59,8 @@ define_actor! {
         next_task_id: u64,
 
         on_idle: Option<Box<dyn Fn() + Send + Sync>>,
+        on_error:
+            Option<Box<dyn Fn(Box<dyn ModelProviderError>) + Send + Sync>>,
         on_transcript: Option<Box<dyn Fn(&str, TranscriptSource) + Send + Sync>>,
     }
 }
@@ -75,6 +81,7 @@ impl Agent {
             tool_manager,
             system_prompt,
             on_idle,
+            on_error,
             on_transcript,
         } = builder;
 
@@ -86,16 +93,25 @@ impl Agent {
             });
         }
 
+        let retry_backoff = Box::new(
+            ExponentialBackoffBuilder::default()
+                .with_max_interval(Duration::from_secs(5 * 60))
+                .with_max_elapsed_time(Some(Duration::from_secs(30 * 60)))
+                .build(),
+        );
+
         let state = AgentState {
             model_client: Some(model_client),
             tool_manager,
             conversation,
+            retry_backoff,
             current_stage: Default::default(),
             pending_inputs: Default::default(),
             pending_tool_results: Default::default(),
             running_tasks: Default::default(),
             next_task_id: 1,
             on_idle,
+            on_error,
             on_transcript,
         };
         Self::spawn(state, Some("agent"))

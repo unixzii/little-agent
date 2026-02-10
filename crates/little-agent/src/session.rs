@@ -1,6 +1,6 @@
 use little_agent_core::tool::Approval as ToolApproval;
 use little_agent_core::{Agent, AgentBuilder, TranscriptSource};
-use little_agent_model::ModelProvider;
+use little_agent_model::{ModelProvider, ModelProviderError};
 
 use crate::tools::*;
 
@@ -34,6 +34,16 @@ impl SessionBuilder {
         on_idle: impl Fn() + Send + Sync + 'static,
     ) -> Self {
         self.agent_builder = self.agent_builder.on_idle(on_idle);
+        self
+    }
+
+    /// Attaches a callback to be invoked when an error occurs.
+    #[inline]
+    pub fn on_error(
+        mut self,
+        on_error: impl Fn(Box<dyn ModelProviderError>) + Send + Sync + 'static,
+    ) -> Self {
+        self.agent_builder = self.agent_builder.on_error(on_error);
         self
     }
 

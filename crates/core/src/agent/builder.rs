@@ -1,4 +1,4 @@
-use little_agent_model::ModelProvider;
+use little_agent_model::{ModelProvider, ModelProviderError};
 
 use super::{Agent, TranscriptSource};
 use crate::Tool;
@@ -12,6 +12,8 @@ pub struct AgentBuilder {
     pub(crate) tool_manager: ToolManager,
     pub(crate) system_prompt: Option<String>,
     pub(crate) on_idle: Option<Box<dyn Fn() + Send + Sync>>,
+    pub(crate) on_error:
+        Option<Box<dyn Fn(Box<dyn ModelProviderError>) + Send + Sync>>,
     pub(crate) on_transcript:
         Option<Box<dyn Fn(&str, TranscriptSource) + Send + Sync>>,
 }
@@ -27,6 +29,7 @@ impl AgentBuilder {
             tool_manager: Default::default(),
             system_prompt: None,
             on_idle: None,
+            on_error: None,
             on_transcript: None,
         }
     }
@@ -45,6 +48,16 @@ impl AgentBuilder {
         on_idle: impl Fn() + Send + Sync + 'static,
     ) -> Self {
         self.on_idle = Some(Box::new(on_idle));
+        self
+    }
+
+    /// Attaches a callback to be invoked when an error occurs.
+    #[inline]
+    pub fn on_error(
+        mut self,
+        on_error: impl Fn(Box<dyn ModelProviderError>) + Send + Sync + 'static,
+    ) -> Self {
+        self.on_error = Some(Box::new(on_error));
         self
     }
 

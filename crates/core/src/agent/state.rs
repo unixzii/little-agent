@@ -6,6 +6,7 @@ use little_agent_model::{
     ModelFinishReason, ModelMessage, ModelProviderError, ModelRequest,
     ToolCallRequest, ToolCallResult,
 };
+use tokio::time::sleep;
 
 use super::{AgentState, TranscriptSource};
 use crate::conversation::Item as ConversationItem;
@@ -32,25 +33,38 @@ impl AgentState {
         self.process_input_checked(input, handle);
     }
 
-    fn process_next_input(&mut self, handle: &Actor<Self>) {
-        if self.current_stage != AgentStage::Idle {
-            // Cannot process the next input now. We don't need to send
-            // another message to do this again, since it will be sent
-            // automatically when other model client requests end.
-            return;
-        }
-        let input = self.pending_inputs.pop_front();
-        if let Some(input) = input {
-            self.process_input_checked(input, handle);
-        } else {
-            // Nothing to process, so we can invoke the idle callback.
+    fn complete_agent_loop(&mut self, handle: &Actor<Self>) {
+        let Some(input) = self.pending_inputs.pop_front() else {
+            // Nothing to process, so we can become idle.
+            self.current_stage = AgentStage::Idle;
             if let Some(on_idle) = &self.on_idle {
                 on_idle();
             }
-        }
+            return;
+        };
+        self.process_input_checked(input, handle);
     }
 
-    fn process_tool_call_requests(
+    /// Process the input string, assuming the stage is checked.
+    fn process_input_checked(&mut self, input: String, handle: &Actor<Self>) {
+        self.retry_backoff.reset();
+
+        // Also invoke the transcript callback for user input, which can make
+        // the messages in the conversation ordered correctly.
+        if let Some(on_transcript) = &self.on_transcript {
+            on_transcript(&input, TranscriptSource::User);
+        }
+
+        // Insert the message to the conversation.
+        self.conversation.items.push(ConversationItem {
+            msg: ModelMessage::User(input.clone()),
+            transcript: input,
+        });
+
+        self.request_model_checked(handle);
+    }
+
+    fn handle_tool_call_requests(
         &mut self,
         requests: Vec<ToolCallRequest>,
         handle: &Actor<Self>,
@@ -74,21 +88,33 @@ impl AgentState {
         }
     }
 
-    /// Process the input string, assuming the stage is checked.
-    fn process_input_checked(&mut self, input: String, handle: &Actor<Self>) {
-        // Also invoke the transcript callback for user input, which can make
-        // the messages in the conversation ordered correctly.
-        if let Some(on_transcript) = &self.on_transcript {
-            on_transcript(&input, TranscriptSource::User);
+    fn handle_model_request_error(
+        &mut self,
+        err: Box<dyn ModelProviderError>,
+        handle: &Actor<Self>,
+    ) {
+        if let Some(on_error) = &self.on_error {
+            on_error(err);
         }
 
-        // Insert the message to the conversation.
-        self.conversation.items.push(ConversationItem {
-            msg: ModelMessage::User(input.clone()),
-            transcript: input,
-        });
+        let Some(timeout) = self.retry_backoff.next_backoff() else {
+            // Maximum retries reached, abort.
+            self.complete_agent_loop(handle);
+            return;
+        };
 
-        self.request_model_checked(handle);
+        // We leave the agent stage unchanged, so the further operations won't
+        // jump in while we're waiting for the retry.
+        self.spawn_task(
+            {
+                let handle = handle.clone();
+                |_| async move {
+                    sleep(timeout).await;
+                    handle.send(RetryMessage).ok();
+                }
+            },
+            handle,
+        );
     }
 
     /// Request the model with the current conversation, assuming the
@@ -187,9 +213,15 @@ impl Debug for ModelClientRequestFinishedMessage {
 
 impl Message<AgentState> for ModelClientRequestFinishedMessage {
     fn handle(self, state: &mut AgentState, handle: &Actor<AgentState>) {
+        // Release the model client.
+        state.model_client = Some(self.model_client);
+
         let resp = match self.response {
             Ok(resp) => resp,
-            Err(_) => unimplemented!(),
+            Err(err) => {
+                state.handle_model_request_error(err, handle);
+                return;
+            }
         };
 
         // Insert the message to the conversation.
@@ -203,20 +235,16 @@ impl Message<AgentState> for ModelClientRequestFinishedMessage {
         let conversation_item = ConversationItem { msg, transcript };
         state.conversation.items.push(conversation_item);
 
-        // Release the model client.
-        state.model_client = Some(self.model_client);
-
         // Check if we need to execute tools.
         let should_run_tools = resp.finish_reason
             == Some(ModelFinishReason::ToolCalls)
             && !resp.tool_calls.is_empty();
         if should_run_tools {
             state.current_stage = AgentStage::RunningTools;
-            state.process_tool_call_requests(resp.tool_calls, handle);
+            state.handle_tool_call_requests(resp.tool_calls, handle);
         } else {
-            // No tools to execute, continue to next input.
-            state.current_stage = AgentStage::Idle;
-            state.process_next_input(handle);
+            // No tools to execute, complete the loop;
+            state.complete_agent_loop(handle);
         }
     }
 }
@@ -271,6 +299,15 @@ impl Message<AgentState> for ToolCallFinishedMessage {
         }
 
         // Now, proceed to the next turn directly.
+        state.request_model_checked(handle);
+    }
+}
+
+#[derive(Debug)]
+struct RetryMessage;
+
+impl Message<AgentState> for RetryMessage {
+    fn handle(self, state: &mut AgentState, handle: &Actor<AgentState>) {
         state.request_model_checked(handle);
     }
 }
