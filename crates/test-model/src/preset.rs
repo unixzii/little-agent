@@ -1,7 +1,7 @@
 use little_agent_model::ToolCallRequest;
 use serde::{Deserialize, Serialize};
 
-/// The preset event in a response.
+/// The events in a preset response.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum PresetEvent {
@@ -11,7 +11,7 @@ pub enum PresetEvent {
     ToolCall(ToolCallRequest),
 }
 
-/// The preset response in one turn.
+/// The preset response for an assistant step.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PresetResponse {
     pub events: Vec<PresetEvent>,

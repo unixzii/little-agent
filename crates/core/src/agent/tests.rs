@@ -14,8 +14,8 @@ use crate::tool::{Approval, Error as ToolError, Tool, ToolResult};
 #[tokio::test]
 async fn test_simple_message() {
     let mut model_provider = TestModelProvider::default();
-    model_provider.add_user_turn();
-    model_provider.add_assistant_turn(PresetResponse {
+    model_provider.add_user_input_step();
+    model_provider.add_assistant_response_step(PresetResponse {
         events: vec![
             PresetEvent::MessageDelta("Hi, ".to_owned()),
             PresetEvent::MessageDelta("what can I do for you?".to_owned()),
@@ -113,8 +113,8 @@ impl Tool for ListCalendarEventsTool {
 #[tokio::test]
 async fn test_tool_call() {
     let mut model_provider = TestModelProvider::default();
-    model_provider.add_user_turn();
-    model_provider.add_assistant_turn(PresetResponse {
+    model_provider.add_user_input_step();
+    model_provider.add_assistant_response_step(PresetResponse {
         events: vec![
             PresetEvent::MessageDelta("Hi, ".to_owned()),
             PresetEvent::MessageDelta("let me check your todo.".to_owned()),
@@ -130,9 +130,9 @@ async fn test_tool_call() {
             }),
         ],
     });
-    model_provider.add_user_turn();
-    model_provider.add_user_turn();
-    model_provider.add_assistant_turn(PresetResponse {
+    model_provider.add_user_input_step();
+    model_provider.add_user_input_step();
+    model_provider.add_assistant_response_step(PresetResponse {
         events: vec![PresetEvent::MessageDelta(
             "Your todo is clean, good job!".to_owned(),
         )],

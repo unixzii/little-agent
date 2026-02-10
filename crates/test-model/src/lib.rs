@@ -53,10 +53,10 @@ impl ModelResponse for TestModelResponse {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<ModelResponseEvent>, Self::Error>> {
-        let turn_idx = self.request.messages.len();
-        if turn_idx >= self.provider.turn_presets.len() {
+        let step_idx = self.request.messages.len();
+        if step_idx >= self.provider.conversation_script.len() {
             return Poll::Ready(Err(Error {
-                message: "no enough turn presets",
+                message: "no enough steps",
                 kind: ErrorKind::RateLimitExceeded,
             }));
         }
@@ -64,15 +64,15 @@ impl ModelResponse for TestModelResponse {
         // SAFETY: This type does not require to be pinned.
         let this = unsafe { self.get_unchecked_mut() };
 
-        let turn = &this.provider.turn_presets[turn_idx];
-        let preset_events = match turn {
-            PresetTurn::User => {
+        let step = &this.provider.conversation_script[step_idx];
+        let preset_events = match step {
+            ConversationStep::UserInput => {
                 return Poll::Ready(Err(Error {
-                    message: "not an assistant turn",
+                    message: "not an assistant response step",
                     kind: ErrorKind::Moderated,
                 }));
             }
-            PresetTurn::Assistant(response) => &response.events,
+            ConversationStep::AssistantResponse(response) => &response.events,
         };
 
         if let Some(sleep) = &mut this.sleep {
@@ -115,24 +115,24 @@ impl ModelResponse for TestModelResponse {
     }
 
     fn make_opaque_message(&self) -> Option<OpaqueMessage> {
-        let turn_idx = self.request.messages.len();
-        let id = format!("msg:{turn_idx}");
+        let step_idx = self.request.messages.len();
+        let id = format!("msg:{step_idx}");
         Some(OpaqueMessage::new(id.clone(), id))
     }
 }
 
 #[derive(Clone)]
-enum PresetTurn {
-    User,
-    Assistant(PresetResponse),
+enum ConversationStep {
+    UserInput,
+    AssistantResponse(PresetResponse),
 }
 
 /// A local fake model for testing purpose.
 ///
-/// Before sending requests, you need to add the preset turns using the
-/// corresponding methods. The added turns will be returned according to
-/// the history messages you send. If there are no enough turn presets
-/// for your request, an error will be returned.
+/// Before sending requests, you need to setup the conversation script, which
+/// is how the model should respond to a request. The added steps will be
+/// selected according to the history messages in your request. If there are no
+/// enough steps in the script, an error will be returned.
 ///
 /// # Note
 ///
@@ -140,19 +140,20 @@ enum PresetTurn {
 /// copies involved. You should only use it for testing.
 #[derive(Clone, Default)]
 pub struct TestModelProvider {
-    turn_presets: Vec<PresetTurn>,
+    conversation_script: Vec<ConversationStep>,
     delay: Option<Duration>,
 }
 
 impl TestModelProvider {
     #[inline]
-    pub fn add_assistant_turn(&mut self, preset: PresetResponse) {
-        self.turn_presets.push(PresetTurn::Assistant(preset));
+    pub fn add_assistant_response_step(&mut self, preset: PresetResponse) {
+        self.conversation_script
+            .push(ConversationStep::AssistantResponse(preset));
     }
 
     #[inline]
-    pub fn add_user_turn(&mut self) {
-        self.turn_presets.push(PresetTurn::User);
+    pub fn add_user_input_step(&mut self) {
+        self.conversation_script.push(ConversationStep::UserInput);
     }
 
     #[inline]
@@ -217,15 +218,15 @@ mod tests {
     #[tokio::test]
     async fn test_send_request() {
         let mut provider = TestModelProvider::default();
-        provider.add_user_turn();
-        provider.add_assistant_turn(PresetResponse {
+        provider.add_user_input_step();
+        provider.add_assistant_response_step(PresetResponse {
             events: vec![
                 PresetEvent::MessageDelta("Hello, ".to_owned()),
                 PresetEvent::MessageDelta("world!".to_owned()),
             ],
         });
-        provider.add_user_turn();
-        provider.add_assistant_turn(PresetResponse {
+        provider.add_user_input_step();
+        provider.add_assistant_response_step(PresetResponse {
             events: vec![
                 PresetEvent::MessageDelta("Sure, ".to_owned()),
                 PresetEvent::MessageDelta("let me take a ".to_owned()),

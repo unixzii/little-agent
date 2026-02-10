@@ -150,8 +150,8 @@ mod tests {
     #[tokio::test]
     async fn test_send_request() {
         let mut model_provider = TestModelProvider::default();
-        model_provider.add_user_turn();
-        model_provider.add_assistant_turn(PresetResponse {
+        model_provider.add_user_input_step();
+        model_provider.add_assistant_response_step(PresetResponse {
             events: vec![
                 PresetEvent::MessageDelta("How ".to_owned()),
                 PresetEvent::MessageDelta("are ".to_owned()),
