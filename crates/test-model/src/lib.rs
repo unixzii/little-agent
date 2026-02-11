@@ -2,10 +2,13 @@
 
 mod preset;
 
+use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::future::ready;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{self, AtomicU64};
 use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
@@ -65,16 +68,34 @@ impl ModelResponse for TestModelResponse {
         let this = unsafe { self.get_unchecked_mut() };
 
         let step = &this.provider.conversation_script[step_idx];
-        let preset_events = match step {
+        let response = match step {
             ConversationStep::UserInput => {
                 return Poll::Ready(Err(Error {
                     message: "not an assistant response step",
                     kind: ErrorKind::Moderated,
                 }));
             }
-            ConversationStep::AssistantResponse(response) => &response.events,
+            ConversationStep::AssistantResponse(response) => response,
         };
+        if response.failures == Some(0) {
+            return Poll::Ready(Err(Error {
+                message: "simulated network failure",
+                kind: ErrorKind::RateLimitExceeded,
+            }));
+        }
 
+        if let Some(counter) = this.provider.failure_counters.get(&step_idx) {
+            let count = counter.fetch_add(1, atomic::Ordering::Relaxed);
+            let expected_count = response.failures.expect("should be set");
+            if count < expected_count {
+                return Poll::Ready(Err(Error {
+                    message: "simulated network failure",
+                    kind: ErrorKind::RateLimitExceeded,
+                }));
+            }
+        }
+
+        let preset_events = &response.events;
         if let Some(sleep) = &mut this.sleep {
             let sleep = sleep.as_mut();
             ready!(sleep.poll(cx));
@@ -142,11 +163,16 @@ enum ConversationStep {
 pub struct TestModelProvider {
     conversation_script: Vec<ConversationStep>,
     delay: Option<Duration>,
+    failure_counters: HashMap<usize, Arc<AtomicU64>>,
 }
 
 impl TestModelProvider {
     #[inline]
     pub fn add_assistant_response_step(&mut self, preset: PresetResponse) {
+        if preset.failures.is_some() {
+            self.failure_counters
+                .insert(self.conversation_script.len(), Default::default());
+        }
         self.conversation_script
             .push(ConversationStep::AssistantResponse(preset));
     }
@@ -195,14 +221,13 @@ mod tests {
 
     async fn collect_response(
         resp: TestModelResponse,
-    ) -> (String, Option<ToolCallRequest>, OpaqueMessage) {
+    ) -> Result<(String, Option<ToolCallRequest>, OpaqueMessage), Error> {
         let mut resp = pin!(resp);
         let mut msg = String::new();
         let mut tool_call = None;
         loop {
             let event = poll_fn(|cx| resp.as_mut().poll_next_event(cx))
-                .await
-                .unwrap()
+                .await?
                 .unwrap();
             match event {
                 ModelResponseEvent::Completed(_) => break,
@@ -212,32 +237,28 @@ mod tests {
                 ModelResponseEvent::ToolCall(req) => tool_call = Some(req),
             }
         }
-        (msg, tool_call, resp.make_opaque_message().unwrap())
+        Ok((msg, tool_call, resp.make_opaque_message().unwrap()))
     }
 
     #[tokio::test]
     async fn test_send_request() {
         let mut provider = TestModelProvider::default();
         provider.add_user_input_step();
-        provider.add_assistant_response_step(PresetResponse {
-            events: vec![
-                PresetEvent::MessageDelta("Hello, ".to_owned()),
-                PresetEvent::MessageDelta("world!".to_owned()),
-            ],
-        });
+        provider.add_assistant_response_step(PresetResponse::with_events([
+            PresetEvent::MessageDelta("Hello, ".to_owned()),
+            PresetEvent::MessageDelta("world!".to_owned()),
+        ]));
         provider.add_user_input_step();
-        provider.add_assistant_response_step(PresetResponse {
-            events: vec![
-                PresetEvent::MessageDelta("Sure, ".to_owned()),
-                PresetEvent::MessageDelta("let me take a ".to_owned()),
-                PresetEvent::MessageDelta("look.".to_owned()),
-                PresetEvent::ToolCall(ToolCallRequest {
-                    id: "tool:1".to_owned(),
-                    name: "read_file".to_owned(),
-                    arguments: json!({ "filename": "todo.txt" }),
-                }),
-            ],
-        });
+        provider.add_assistant_response_step(PresetResponse::with_events([
+            PresetEvent::MessageDelta("Sure, ".to_owned()),
+            PresetEvent::MessageDelta("let me take a ".to_owned()),
+            PresetEvent::MessageDelta("look.".to_owned()),
+            PresetEvent::ToolCall(ToolCallRequest {
+                id: "tool:1".to_owned(),
+                name: "read_file".to_owned(),
+                arguments: json!({ "filename": "todo.txt" }),
+            }),
+        ]));
 
         let mut req = ModelRequest {
             messages: vec![ModelMessage::User("Hi".to_owned())],
@@ -256,17 +277,46 @@ mod tests {
             }],
         };
         let resp = provider.send_request(&req).await.unwrap();
-        let (msg, _, opaque_msg) = collect_response(resp).await;
+        let (msg, _, opaque_msg) = collect_response(resp).await.unwrap();
         assert_eq!(msg, "Hello, world!");
 
         req.messages.push(ModelMessage::Opaque(opaque_msg));
         req.messages
             .push(ModelMessage::User("Check my todo".to_owned()));
         let resp = provider.send_request(&req).await.unwrap();
-        let (msg, tool_call, _) = collect_response(resp).await;
+        let (msg, tool_call, _) = collect_response(resp).await.unwrap();
         assert_eq!(msg, "Sure, let me take a look.");
         let tool_call = tool_call.unwrap();
         assert_eq!(tool_call.name, "read_file");
         assert_eq!(tool_call.arguments, json!({ "filename": "todo.txt" }));
+    }
+
+    #[tokio::test]
+    async fn test_simulated_failure() {
+        let mut provider = TestModelProvider::default();
+        provider.add_user_input_step();
+        provider.add_assistant_response_step(
+            PresetResponse::with_events([
+                PresetEvent::MessageDelta("Hello, ".to_owned()),
+                PresetEvent::MessageDelta("world!".to_owned()),
+            ])
+            .with_failures(1),
+        );
+
+        let req = ModelRequest {
+            messages: vec![ModelMessage::User("Hi".to_owned())],
+            tools: vec![],
+        };
+        let resp = provider.send_request(&req).await.unwrap();
+        let err = collect_response(resp).await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::RateLimitExceeded);
+
+        let req = ModelRequest {
+            messages: vec![ModelMessage::User("Hi".to_owned())],
+            tools: vec![],
+        };
+        let resp = provider.send_request(&req).await.unwrap();
+        let (msg, ..) = collect_response(resp).await.unwrap();
+        assert_eq!(msg, "Hello, world!");
     }
 }

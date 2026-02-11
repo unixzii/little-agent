@@ -15,12 +15,10 @@ use crate::tool::{Approval, Error as ToolError, Tool, ToolResult};
 async fn test_simple_message() {
     let mut model_provider = TestModelProvider::default();
     model_provider.add_user_input_step();
-    model_provider.add_assistant_response_step(PresetResponse {
-        events: vec![
-            PresetEvent::MessageDelta("Hi, ".to_owned()),
-            PresetEvent::MessageDelta("what can I do for you?".to_owned()),
-        ],
-    });
+    model_provider.add_assistant_response_step(PresetResponse::with_events([
+        PresetEvent::MessageDelta("Hi, ".to_owned()),
+        PresetEvent::MessageDelta("what can I do for you?".to_owned()),
+    ]));
 
     let transcripts = Arc::new(Mutex::new(vec![]));
     let (idle_tx, mut idle_rx) = watch::channel::<bool>(false);
@@ -114,29 +112,25 @@ impl Tool for ListCalendarEventsTool {
 async fn test_tool_call() {
     let mut model_provider = TestModelProvider::default();
     model_provider.add_user_input_step();
-    model_provider.add_assistant_response_step(PresetResponse {
-        events: vec![
-            PresetEvent::MessageDelta("Hi, ".to_owned()),
-            PresetEvent::MessageDelta("let me check your todo.".to_owned()),
-            PresetEvent::ToolCall(ToolCallRequest {
-                id: "tool:1".to_owned(),
-                name: "list_todos".to_owned(),
-                arguments: json!({}),
-            }),
-            PresetEvent::ToolCall(ToolCallRequest {
-                id: "tool:2".to_owned(),
-                name: "list_calendar_events".to_owned(),
-                arguments: json!({}),
-            }),
-        ],
-    });
+    model_provider.add_assistant_response_step(PresetResponse::with_events([
+        PresetEvent::MessageDelta("Hi, ".to_owned()),
+        PresetEvent::MessageDelta("let me check your todo.".to_owned()),
+        PresetEvent::ToolCall(ToolCallRequest {
+            id: "tool:1".to_owned(),
+            name: "list_todos".to_owned(),
+            arguments: json!({}),
+        }),
+        PresetEvent::ToolCall(ToolCallRequest {
+            id: "tool:2".to_owned(),
+            name: "list_calendar_events".to_owned(),
+            arguments: json!({}),
+        }),
+    ]));
     model_provider.add_user_input_step();
     model_provider.add_user_input_step();
-    model_provider.add_assistant_response_step(PresetResponse {
-        events: vec![PresetEvent::MessageDelta(
-            "Your todo is clean, good job!".to_owned(),
-        )],
-    });
+    model_provider.add_assistant_response_step(PresetResponse::with_events([
+        PresetEvent::MessageDelta("Your todo is clean, good job!".to_owned()),
+    ]));
 
     let tool_call_requests = Arc::new(Mutex::new(vec![]));
     let (idle_tx, mut idle_rx) = watch::channel::<bool>(false);

@@ -151,13 +151,13 @@ mod tests {
     async fn test_send_request() {
         let mut model_provider = TestModelProvider::default();
         model_provider.add_user_input_step();
-        model_provider.add_assistant_response_step(PresetResponse {
-            events: vec![
+        model_provider.add_assistant_response_step(
+            PresetResponse::with_events([
                 PresetEvent::MessageDelta("How ".to_owned()),
                 PresetEvent::MessageDelta("are ".to_owned()),
                 PresetEvent::MessageDelta("you?".to_owned()),
-            ],
-        });
+            ]),
+        );
 
         let model_client = ModelClient::new(model_provider);
 
