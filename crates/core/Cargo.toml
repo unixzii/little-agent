@@ -15,5 +15,5 @@ little-agent-model = { workspace = true }
 little-agent-actor = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 little-agent-test-model = { workspace = true }
