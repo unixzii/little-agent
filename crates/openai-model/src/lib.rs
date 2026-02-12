@@ -89,10 +89,7 @@ impl ModelProvider for OpenAIProvider {
         let openai_req = proto::create_request(req, &self.config);
         let resp_fut = self
             .client
-            .post(format!(
-                "{}{}",
-                self.config.base_url, "/v1/chat/completions"
-            ))
+            .post(format!("{}{}", self.config.base_url, "/chat/completions"))
             .header(
                 header::AUTHORIZATION,
                 format!("Bearer {}", self.config.api_key),
