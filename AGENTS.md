@@ -1,10 +1,6 @@
-# Intro
+# little-agent
 
-`little-agent` is a lightweight embedded agent framework (similar to Claude Code and OpenAI Codex). It supports multiple model providers and allows easy integration with your apps.
-
-# Architecture
-
-The project is organized into several crates:
+The project is organized into several crates, and there are some key crates and types:
 
 - `core`: Core logic of the agent, including the agent state, conversation management, and model client.
   - `Agent`: Entry point of the agent, which maintains the agent state and provides methods to interact with it.
@@ -14,22 +10,29 @@ The project is organized into several crates:
   - `ModelProvider`: A trait that model providers implement, which can be used to send model requests.
   - `ModelRequest`: A concrete type that represents a model request (including messages, tools, etc.).
   - `ModelResponse`: A trait that represents a response from the model.
-- `test-model`: A fake model provider for testing purpose.
+- `test-model`: A fake model provider for testing purpose. Use this to implement tests for other crates.
 - `actor`: A simple util module that enables actor-oriented programming.
 
-# Rules
+`little-agent` crate is a bundle of the core module and some built-in tools. It provides an out-of-the-box agent that can be used as a library (see `lib.rs`). There is also a CLI (see `main.rs`) that user can use directly.
 
-## Common
+## Development guidance
 
-- Most works should be done by modifying `core` crate, and you may update `model` crate as needed. Other foundation crates should be rarely touched, unless asked specifically.
+Most works should be done in `core` crate, and you may update `model` crate if you need more model capabilities. Other foundation crates should be rarely touched, unless asked specifically. New features added to `core` should also be exposed by `little-agent` if necessary.
+
+### Common rules
+
 - All tests should be passed in the end, and never add workarounds to the test code to make them pass.
 - When adding new types, write comprehensive docs and tests for them.
 - Make each change reviewable, do minimal changes in one session.
 - Don't search / grep the whole project eagerly, unless you indeed miss the context.
 - Write compact and clean functions, deeply nested code should be definitely avoided.
 
-## Agent Related
+### Agent-related rules
 
 - `Agent` is an actor, external code can only interact with it by sending messages.
 - Always notify state changes via callbacks, getter methods are not allowed.
 - When adding options for `Agent`, prefer to add them to `AgentBuilder`.
+
+## Tests
+
+The project only has unit tests currently. To run them, just execute `cargo test`.
