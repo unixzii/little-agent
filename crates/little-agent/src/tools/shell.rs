@@ -82,7 +82,7 @@ fn create_command_with_inferred_shell() -> Command {
 #[inline]
 async fn run_command_line(cmdline: &str) -> Result<String, io::Error> {
     let output = create_command_with_inferred_shell()
-        .arg("-cli")
+        .arg("-cl")
         .arg(cmdline)
         .output()
         .await?;
