@@ -3,6 +3,7 @@ name = "little-agent-model"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
